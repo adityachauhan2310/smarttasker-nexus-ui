@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -18,7 +19,8 @@ import {
   Brain,
   Shield,
   Database,
-  Layers
+  Layers,
+  Users
 } from 'lucide-react';
 import TechnicalDocumentation from '../components/docs/TechnicalDocumentation';
 
