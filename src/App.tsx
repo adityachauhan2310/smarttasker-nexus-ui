@@ -24,157 +24,161 @@ import TaskDetail from "./pages/team-member/TaskDetail";
 import AIChat from "./pages/AIChat";
 import Layout from "./components/layout/Layout";
 
+// Create QueryClient instance outside of component to prevent re-creation
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 5 * 60 * 1000,
       retry: 1,
+      refetchOnWindowFocus: false,
     },
   },
 });
 
-const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <ThemeProvider>
-        <AuthProvider>
-          <NotificationProvider>
-            <Toaster />
-            <Sonner />
-            <BrowserRouter>
-              <Routes>
-                <Route path="/signin" element={<SignIn />} />
-                <Route
-                  path="/*"
-                  element={
-                    <ProtectedRoute>
-                      <Layout>
-                        <Routes>
-                          {/* Admin Routes */}
-                          <Route
-                            path="/admin/dashboard"
-                            element={
-                              <ProtectedRoute requiredRole="admin">
-                                <AdminDashboard />
-                              </ProtectedRoute>
-                            }
-                          />
-                          <Route
-                            path="/admin/users"
-                            element={
-                              <ProtectedRoute requiredRole="admin">
-                                <UserManagement />
-                              </ProtectedRoute>
-                            }
-                          />
-                          <Route
-                            path="/admin/teams"
-                            element={
-                              <ProtectedRoute requiredRole="admin">
-                                <TeamManagement />
-                              </ProtectedRoute>
-                            }
-                          />
-                          <Route
-                            path="/admin/tasks"
-                            element={
-                              <ProtectedRoute requiredRole="admin">
-                                <AdminTasks />
-                              </ProtectedRoute>
-                            }
-                          />
-                          <Route
-                            path="/admin/settings"
-                            element={
-                              <ProtectedRoute requiredRole="admin">
-                                <AdminSettings />
-                              </ProtectedRoute>
-                            }
-                          />
-                          
-                          {/* Team Leader Routes */}
-                          <Route
-                            path="/team-leader/dashboard"
-                            element={
-                              <ProtectedRoute requiredRole="team_leader">
-                                <TeamLeaderDashboard />
-                              </ProtectedRoute>
-                            }
-                          />
-                          <Route
-                            path="/team-leader/calendar"
-                            element={
-                              <ProtectedRoute requiredRole="team_leader">
-                                <TeamCalendar />
-                              </ProtectedRoute>
-                            }
-                          />
-                          <Route
-                            path="/team-leader/assign-tasks"
-                            element={
-                              <ProtectedRoute requiredRole="team_leader">
-                                <TaskAssignment />
-                              </ProtectedRoute>
-                            }
-                          />
-                          <Route
-                            path="/team-leader/team-members"
-                            element={
-                              <ProtectedRoute requiredRole="team_leader">
-                                <TeamMemberManagement />
-                              </ProtectedRoute>
-                            }
-                          />
-                          
-                          {/* Team Member Routes */}
-                          <Route
-                            path="/dashboard"
-                            element={
-                              <ProtectedRoute>
-                                <TeamMemberDashboard />
-                              </ProtectedRoute>
-                            }
-                          />
-                          <Route
-                            path="/tasks"
-                            element={
-                              <ProtectedRoute>
-                                <TaskList />
-                              </ProtectedRoute>
-                            }
-                          />
-                          <Route
-                            path="/tasks/:id"
-                            element={
-                              <ProtectedRoute>
-                                <TaskDetail />
-                              </ProtectedRoute>
-                            }
-                          />
-                          
-                          {/* Shared Routes */}
-                          <Route
-                            path="/ai-chat"
-                            element={
-                              <ProtectedRoute>
-                                <AIChat />
-                              </ProtectedRoute>
-                            }
-                          />
-                          
-                          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-                        </Routes>
-                      </Layout>
-                    </ProtectedRoute>
-                  }
-                />
-              </Routes>
-            </BrowserRouter>
-          </NotificationProvider>
-        </AuthProvider>
-      </ThemeProvider>
-    </TooltipProvider>
-  </QueryClientProvider>
-);
+const App = () => {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <ThemeProvider>
+          <AuthProvider>
+            <NotificationProvider>
+              <Toaster />
+              <Sonner />
+              <BrowserRouter>
+                <Routes>
+                  <Route path="/signin" element={<SignIn />} />
+                  <Route
+                    path="/*"
+                    element={
+                      <ProtectedRoute>
+                        <Layout>
+                          <Routes>
+                            {/* Admin Routes */}
+                            <Route
+                              path="/admin/dashboard"
+                              element={
+                                <ProtectedRoute requiredRole="admin">
+                                  <AdminDashboard />
+                                </ProtectedRoute>
+                              }
+                            />
+                            <Route
+                              path="/admin/users"
+                              element={
+                                <ProtectedRoute requiredRole="admin">
+                                  <UserManagement />
+                                </ProtectedRoute>
+                              }
+                            />
+                            <Route
+                              path="/admin/teams"
+                              element={
+                                <ProtectedRoute requiredRole="admin">
+                                  <TeamManagement />
+                                </ProtectedRoute>
+                              }
+                            />
+                            <Route
+                              path="/admin/tasks"
+                              element={
+                                <ProtectedRoute requiredRole="admin">
+                                  <AdminTasks />
+                                </ProtectedRoute>
+                              }
+                            />
+                            <Route
+                              path="/admin/settings"
+                              element={
+                                <ProtectedRoute requiredRole="admin">
+                                  <AdminSettings />
+                                </ProtectedRoute>
+                              }
+                            />
+                            
+                            {/* Team Leader Routes */}
+                            <Route
+                              path="/team-leader/dashboard"
+                              element={
+                                <ProtectedRoute requiredRole="team_leader">
+                                  <TeamLeaderDashboard />
+                                </ProtectedRoute>
+                              }
+                            />
+                            <Route
+                              path="/team-leader/calendar"
+                              element={
+                                <ProtectedRoute requiredRole="team_leader">
+                                  <TeamCalendar />
+                                </ProtectedRoute>
+                              }
+                            />
+                            <Route
+                              path="/team-leader/assign-tasks"
+                              element={
+                                <ProtectedRoute requiredRole="team_leader">
+                                  <TaskAssignment />
+                                </ProtectedRoute>
+                              }
+                            />
+                            <Route
+                              path="/team-leader/team-members"
+                              element={
+                                <ProtectedRoute requiredRole="team_leader">
+                                  <TeamMemberManagement />
+                                </ProtectedRoute>
+                              }
+                            />
+                            
+                            {/* Team Member Routes */}
+                            <Route
+                              path="/dashboard"
+                              element={
+                                <ProtectedRoute>
+                                  <TeamMemberDashboard />
+                                </ProtectedRoute>
+                              }
+                            />
+                            <Route
+                              path="/tasks"
+                              element={
+                                <ProtectedRoute>
+                                  <TaskList />
+                                </ProtectedRoute>
+                              }
+                            />
+                            <Route
+                              path="/tasks/:id"
+                              element={
+                                <ProtectedRoute>
+                                  <TaskDetail />
+                                </ProtectedRoute>
+                              }
+                            />
+                            
+                            {/* Shared Routes */}
+                            <Route
+                              path="/ai-chat"
+                              element={
+                                <ProtectedRoute>
+                                  <AIChat />
+                                </ProtectedRoute>
+                              }
+                            />
+                            
+                            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                          </Routes>
+                        </Layout>
+                      </ProtectedRoute>
+                    }
+                  />
+                </Routes>
+              </BrowserRouter>
+            </NotificationProvider>
+          </AuthProvider>
+        </ThemeProvider>
+      </TooltipProvider>
+    </QueryClientProvider>
+  );
+};
 
 export default App;
