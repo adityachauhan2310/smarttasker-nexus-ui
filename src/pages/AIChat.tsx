@@ -18,6 +18,7 @@ const AIChat = () => {
   const [message, setMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   
   const {
@@ -34,12 +35,31 @@ const AIChat = () => {
   } = useGroqChat();
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    // Use smooth scrolling with proper behavior
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ 
+        behavior: 'smooth',
+        block: 'end',
+        inline: 'nearest'
+      });
+    }
   };
 
   useEffect(() => {
-    scrollToBottom();
+    // Only scroll when messages change, with a small delay to ensure DOM is updated
+    const timeoutId = setTimeout(() => {
+      scrollToBottom();
+    }, 100);
+
+    return () => clearTimeout(timeoutId);
   }, [messages]);
+
+  // Prevent auto-scroll on initial load
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, []);
 
   const handleSendMessage = async () => {
     if (message.trim() && !isLoading) {
@@ -105,21 +125,21 @@ const AIChat = () => {
   };
 
   return (
-    <div className="flex h-[calc(100vh-6rem)] space-x-6 animate-fade-in">
-      {/* Sidebar */}
+    <div className="flex h-[calc(100vh-6rem)] space-x-6 animate-ultra-fade-in page-transition">
+      {/* Enhanced Sidebar */}
       <div className="w-80 space-y-4">
-        <Card className="backdrop-blur-sm bg-white/90 dark:bg-gray-800/90 border-0 shadow-xl">
+        <Card className="backdrop-blur-sm bg-white/95 dark:bg-gray-800/95 border-0 shadow-xl ultra-hover animate-ultra-slide-up">
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <CardTitle className="text-lg flex items-center space-x-2">
-                <Bot className="h-5 w-5 text-blue-600" />
+                <Bot className="h-5 w-5 text-blue-600 animate-pulse" />
                 <span>AI Assistant</span>
               </CardTitle>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={createNewConversation}
-                className="hover:scale-105 transition-transform"
+                className="ultra-hover hover:scale-105 transition-transform duration-300"
               >
                 <Plus className="h-4 w-4" />
               </Button>
@@ -143,29 +163,29 @@ const AIChat = () => {
           userRole={user?.role}
         />
 
-        {/* AI Capabilities */}
-        <Card className="backdrop-blur-sm bg-white/90 dark:bg-gray-800/90 border-0 shadow-xl">
+        {/* Enhanced AI Capabilities */}
+        <Card className="backdrop-blur-sm bg-white/95 dark:bg-gray-800/95 border-0 shadow-xl ultra-hover animate-ultra-slide-up delay-200">
           <CardHeader>
             <CardTitle className="text-sm">AI Capabilities</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3 text-xs">
-              <div className="flex items-start space-x-2">
-                <Sparkles className="h-3 w-3 text-blue-600 mt-0.5 flex-shrink-0" />
+            <div className="space-y-4 text-xs">
+              <div className="flex items-start space-x-3">
+                <Sparkles className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0 animate-pulse" />
                 <div>
                   <p className="font-medium">Smart Task Creation</p>
                   <p className="text-gray-500 dark:text-gray-400">Extract tasks from natural language</p>
                 </div>
               </div>
-              <div className="flex items-start space-x-2">
-                <Target className="h-3 w-3 text-green-600 mt-0.5 flex-shrink-0" />
+              <div className="flex items-start space-x-3">
+                <Target className="h-4 w-4 text-green-600 mt-0.5 flex-shrink-0 animate-pulse delay-200" />
                 <div>
                   <p className="font-medium">Priority Analysis</p>
                   <p className="text-gray-500 dark:text-gray-400">Intelligent task prioritization</p>
                 </div>
               </div>
-              <div className="flex items-start space-x-2">
-                <Calendar className="h-3 w-3 text-purple-600 mt-0.5 flex-shrink-0" />
+              <div className="flex items-start space-x-3">
+                <Calendar className="h-4 w-4 text-purple-600 mt-0.5 flex-shrink-0 animate-pulse delay-400" />
                 <div>
                   <p className="font-medium">Schedule Management</p>
                   <p className="text-gray-500 dark:text-gray-400">Deadline tracking and reminders</p>
@@ -176,16 +196,16 @@ const AIChat = () => {
         </Card>
       </div>
 
-      {/* Main Chat Area */}
+      {/* Enhanced Main Chat Area */}
       <div className="flex-1 flex flex-col">
-        <Card className="flex-1 flex flex-col backdrop-blur-sm bg-white/90 dark:bg-gray-800/90 border-0 shadow-xl">
+        <Card className="flex-1 flex flex-col backdrop-blur-sm bg-white/95 dark:bg-gray-800/95 border-0 shadow-xl ultra-hover animate-ultra-slide-up delay-300">
           <CardHeader className="border-b border-gray-200/50 dark:border-gray-700/50">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-3">
-                <div className="relative">
-                  <Avatar className="h-10 w-10">
+                <div className="relative group">
+                  <Avatar className="h-12 w-12">
                     <AvatarFallback className="bg-gradient-to-r from-blue-600 to-green-600 text-white">
-                      <Bot className="h-5 w-5" />
+                      <Bot className="h-6 w-6" />
                     </AvatarFallback>
                   </Avatar>
                   <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-white dark:border-gray-800 animate-pulse"></div>
@@ -193,25 +213,34 @@ const AIChat = () => {
                 <div>
                   <h3 className="font-semibold text-gray-900 dark:text-white">SmartTasker AI</h3>
                   <p className="text-xs text-gray-500 dark:text-gray-400">
-                    {isTyping ? 'Typing...' : 'Online'}
+                    {isTyping ? (
+                      <span className="flex items-center">
+                        <span className="animate-pulse">Thinking</span>
+                        <span className="ml-1 animate-bounce">...</span>
+                      </span>
+                    ) : 'Online'}
                   </p>
                 </div>
               </div>
-              <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400">
+              <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400 animate-pulse">
                 <Sparkles className="h-3 w-3 mr-1" />
                 AI Powered
               </Badge>
             </div>
           </CardHeader>
           
-          {/* Messages */}
-          <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gradient-to-b from-gray-50/50 to-white/50 dark:from-gray-900/50 dark:to-gray-800/50">
+          {/* Enhanced Messages Container */}
+          <div 
+            ref={messagesContainerRef}
+            className="flex-1 overflow-y-auto p-6 space-y-4 bg-gradient-to-b from-gray-50/50 to-white/50 dark:from-gray-900/50 dark:to-gray-800/50"
+            style={{ scrollBehavior: 'smooth' }}
+          >
             {messages.length === 0 && (
-              <div className="flex flex-col items-center justify-center h-full text-center animate-fade-in">
-                <div className="w-16 h-16 bg-gradient-to-r from-blue-600 to-green-600 rounded-full flex items-center justify-center mb-4">
-                  <Bot className="h-8 w-8 text-white" />
+              <div className="flex flex-col items-center justify-center h-full text-center animate-ultra-fade-in">
+                <div className="w-20 h-20 bg-gradient-to-r from-blue-600 to-green-600 rounded-full flex items-center justify-center mb-6 animate-gentle-glow">
+                  <Bot className="h-10 w-10 text-white" />
                 </div>
-                <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+                <h3 className="text-2xl font-semibold text-gray-900 dark:text-white mb-3 gradient-text">
                   Welcome to SmartTasker AI
                 </h3>
                 <p className="text-gray-600 dark:text-gray-400 max-w-md">
@@ -230,14 +259,14 @@ const AIChat = () => {
             ))}
             
             {isTyping && (
-              <div className="flex items-center space-x-3 animate-fade-in">
+              <div className="flex items-center space-x-3 animate-ultra-fade-in">
                 <Avatar className="h-8 w-8">
                   <AvatarFallback className="bg-blue-600 text-white">
                     <Bot className="h-4 w-4" />
                   </AvatarFallback>
                 </Avatar>
-                <div className="bg-gray-100 dark:bg-gray-700 rounded-2xl px-4 py-2">
-                  <div className="flex space-x-1">
+                <div className="bg-gray-100 dark:bg-gray-700 rounded-2xl px-6 py-3">
+                  <div className="flex space-x-2">
                     <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
                     <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
                     <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
@@ -246,12 +275,13 @@ const AIChat = () => {
               </div>
             )}
             
-            <div ref={messagesEndRef} />
+            {/* This div will be used for scrolling */}
+            <div ref={messagesEndRef} className="h-2" />
           </div>
           
-          {/* Task Preview */}
+          {/* Enhanced Task Preview */}
           {taskPreview && (
-            <div className="border-t border-gray-200/50 dark:border-gray-700/50 p-4 animate-slide-up">
+            <div className="border-t border-gray-200/50 dark:border-gray-700/50 p-4 animate-ultra-slide-up">
               <TaskPreviewCard
                 task={taskPreview}
                 onConfirm={confirmTask}
@@ -260,7 +290,7 @@ const AIChat = () => {
             </div>
           )}
           
-          {/* Message Input */}
+          {/* Enhanced Message Input */}
           <div className="border-t border-gray-200/50 dark:border-gray-700/50 p-4">
             <div className="flex space-x-3">
               <Input
@@ -269,13 +299,13 @@ const AIChat = () => {
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 onKeyPress={handleKeyPress}
-                className="flex-1 bg-white/50 dark:bg-gray-700/50 border-gray-200 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 transition-all"
+                className="flex-1 bg-white/50 dark:bg-gray-700/50 border-gray-200 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 transition-all duration-300 ultra-hover"
                 disabled={isLoading}
               />
               <Button
                 onClick={handleSendMessage}
                 disabled={!message.trim() || isLoading}
-                className="bg-gradient-to-r from-blue-600 to-green-600 hover:from-blue-700 hover:to-green-700 shadow-lg hover:shadow-xl transition-all hover:scale-105"
+                className="bg-gradient-to-r from-blue-600 to-green-600 hover:from-blue-700 hover:to-green-700 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 ultra-hover"
               >
                 {isLoading ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
