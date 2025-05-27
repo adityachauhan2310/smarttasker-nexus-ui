@@ -1,248 +1,291 @@
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { MessageSquare, Send, Bot, User, Sparkles, Clock } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
+import { MessageSquare, Send, Bot, User, Sparkles, Clock, Plus, CheckCircle, Calendar, Target, Loader2 } from 'lucide-react';
+import { useGroqChat } from '../hooks/useGroqChat';
+import TaskPreviewCard from '../components/ai/TaskPreviewCard';
+import MessageBubble from '../components/ai/MessageBubble';
+import SuggestedPrompts from '../components/ai/SuggestedPrompts';
+import ConversationHistory from '../components/ai/ConversationHistory';
 
 const AIChat = () => {
+  const { user } = useAuth();
   const [message, setMessage] = useState('');
-  const [messages, setMessages] = useState([
-    {
-      id: '1',
-      type: 'ai',
-      content: 'Hello! I\'m your AI assistant. I can help you with task management, productivity tips, project planning, and much more. What would you like to know?',
-      timestamp: '10:00 AM',
-    },
-    {
-      id: '2',
-      type: 'user',
-      content: 'Can you help me prioritize my tasks for today?',
-      timestamp: '10:01 AM',
-    },
-    {
-      id: '3',
-      type: 'ai',
-      content: 'Absolutely! I can help you prioritize your tasks. Based on your current workload, I recommend focusing on high-priority items with upcoming deadlines first. Would you like me to analyze your current task list and suggest a prioritized schedule?',
-      timestamp: '10:01 AM',
-    },
-  ]);
+  const [isTyping, setIsTyping] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  
+  const {
+    messages,
+    sendMessage,
+    isLoading,
+    taskPreview,
+    clearTaskPreview,
+    confirmTask,
+    conversations,
+    currentConversationId,
+    createNewConversation,
+    switchConversation,
+  } = useGroqChat();
 
-  const suggestedQuestions = [
-    'How can I improve my productivity?',
-    'What are my upcoming deadlines?',
-    'Help me plan my sprint',
-    'Analyze my team\'s performance',
-    'Suggest task automation ideas',
-  ];
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
 
-  const handleSendMessage = () => {
-    if (message.trim()) {
-      const newMessage = {
-        id: Date.now().toString(),
-        type: 'user' as const,
-        content: message,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      };
-      
-      setMessages([...messages, newMessage]);
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  const handleSendMessage = async () => {
+    if (message.trim() && !isLoading) {
+      const userMessage = message;
       setMessage('');
+      setIsTyping(true);
       
-      // Simulate AI response
-      setTimeout(() => {
-        const aiResponse = {
-          id: (Date.now() + 1).toString(),
-          type: 'ai' as const,
-          content: 'Thank you for your question! I\'m processing your request and will provide you with a detailed response. As an AI assistant, I can help you with various aspects of task management and productivity.',
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        };
-        setMessages(prev => [...prev, aiResponse]);
-      }, 1000);
+      try {
+        await sendMessage(userMessage);
+      } catch (error) {
+        console.error('Failed to send message:', error);
+      } finally {
+        setIsTyping(false);
+      }
     }
   };
 
-  const handleSuggestedQuestion = (question: string) => {
-    setMessage(question);
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
+    }
+  };
+
+  const getRoleBasedWelcome = () => {
+    switch (user?.role) {
+      case 'admin':
+        return "Hello! I'm your AI assistant. I can help you manage users, analyze system metrics, create admin tasks, and provide insights across your organization.";
+      case 'team_leader':
+        return "Hi there! I'm here to help you manage your team, assign tasks, track performance, and optimize your team's productivity.";
+      default:
+        return "Welcome! I'm your personal AI assistant. I can help you manage tasks, set priorities, track deadlines, and boost your productivity.";
+    }
+  };
+
+  const getRoleBasedPrompts = () => {
+    const basePrompts = [
+      'What are my tasks for today?',
+      'Create a task: Team meeting tomorrow at 2pm',
+      'Show me my overdue tasks',
+      'What should I prioritize today?',
+    ];
+
+    if (user?.role === 'admin') {
+      return [
+        ...basePrompts,
+        'Show system performance metrics',
+        'How many users are active this month?',
+        'Create admin task: System maintenance',
+      ];
+    }
+
+    if (user?.role === 'team_leader') {
+      return [
+        ...basePrompts,
+        'How is my team performing?',
+        'Assign task to team member',
+        'Show team workload distribution',
+      ];
+    }
+
+    return basePrompts;
   };
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">AI Assistant</h1>
-        <p className="text-gray-600 dark:text-gray-400 mt-2">
-          Get help with task management, productivity tips, and project planning
-        </p>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Chat Area */}
-        <div className="lg:col-span-3">
-          <Card className="h-[600px] flex flex-col">
-            <CardHeader className="border-b">
-              <CardTitle className="flex items-center space-x-2">
+    <div className="flex h-[calc(100vh-6rem)] space-x-6 animate-fade-in">
+      {/* Sidebar */}
+      <div className="w-80 space-y-4">
+        <Card className="backdrop-blur-sm bg-white/90 dark:bg-gray-800/90 border-0 shadow-xl">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-lg flex items-center space-x-2">
                 <Bot className="h-5 w-5 text-blue-600" />
-                <span>SmartTasker AI Assistant</span>
-                <Badge variant="secondary" className="ml-auto">
-                  <Sparkles className="h-3 w-3 mr-1" />
-                  Online
-                </Badge>
+                <span>AI Assistant</span>
               </CardTitle>
-              <CardDescription>
-                Your intelligent assistant for productivity and task management
-              </CardDescription>
-            </CardHeader>
-            
-            {/* Messages */}
-            <CardContent className="flex-1 overflow-y-auto p-4 space-y-4">
-              {messages.map((msg) => (
-                <div
-                  key={msg.id}
-                  className={`flex space-x-3 ${msg.type === 'user' ? 'justify-end' : 'justify-start'}`}
-                >
-                  {msg.type === 'ai' && (
-                    <Avatar className="h-8 w-8">
-                      <AvatarFallback className="bg-blue-600 text-white">
-                        <Bot className="h-4 w-4" />
-                      </AvatarFallback>
-                    </Avatar>
-                  )}
-                  
-                  <div
-                    className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
-                      msg.type === 'user'
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white'
-                    }`}
-                  >
-                    <p className="text-sm">{msg.content}</p>
-                    <div className="flex items-center space-x-1 mt-1">
-                      <Clock className="h-3 w-3 opacity-50" />
-                      <span className="text-xs opacity-75">{msg.timestamp}</span>
-                    </div>
-                  </div>
-                  
-                  {msg.type === 'user' && (
-                    <Avatar className="h-8 w-8">
-                      <AvatarFallback className="bg-green-600 text-white">
-                        <User className="h-4 w-4" />
-                      </AvatarFallback>
-                    </Avatar>
-                  )}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={createNewConversation}
+                className="hover:scale-105 transition-transform"
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+            </div>
+            <CardDescription>
+              Smart task management assistant
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <ConversationHistory
+              conversations={conversations}
+              currentId={currentConversationId}
+              onSwitch={switchConversation}
+            />
+          </CardContent>
+        </Card>
+
+        <SuggestedPrompts
+          prompts={getRoleBasedPrompts()}
+          onSelect={setMessage}
+          userRole={user?.role}
+        />
+
+        {/* AI Capabilities */}
+        <Card className="backdrop-blur-sm bg-white/90 dark:bg-gray-800/90 border-0 shadow-xl">
+          <CardHeader>
+            <CardTitle className="text-sm">AI Capabilities</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3 text-xs">
+              <div className="flex items-start space-x-2">
+                <Sparkles className="h-3 w-3 text-blue-600 mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="font-medium">Smart Task Creation</p>
+                  <p className="text-gray-500 dark:text-gray-400">Extract tasks from natural language</p>
                 </div>
-              ))}
-            </CardContent>
-            
-            {/* Message Input */}
-            <div className="border-t p-4">
-              <div className="flex space-x-2">
-                <Input
-                  placeholder="Type your message..."
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-                  className="flex-1"
-                />
-                <Button onClick={handleSendMessage} disabled={!message.trim()}>
-                  <Send className="h-4 w-4" />
-                </Button>
+              </div>
+              <div className="flex items-start space-x-2">
+                <Target className="h-3 w-3 text-green-600 mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="font-medium">Priority Analysis</p>
+                  <p className="text-gray-500 dark:text-gray-400">Intelligent task prioritization</p>
+                </div>
+              </div>
+              <div className="flex items-start space-x-2">
+                <Calendar className="h-3 w-3 text-purple-600 mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="font-medium">Schedule Management</p>
+                  <p className="text-gray-500 dark:text-gray-400">Deadline tracking and reminders</p>
+                </div>
               </div>
             </div>
-          </Card>
-        </div>
+          </CardContent>
+        </Card>
+      </div>
 
-        {/* Sidebar */}
-        <div className="space-y-6">
-          {/* Quick Actions */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">Quick Questions</CardTitle>
-              <CardDescription className="text-xs">
-                Click to ask common questions
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {suggestedQuestions.map((question, index) => (
-                <Button
-                  key={index}
-                  variant="outline"
-                  size="sm"
-                  className="w-full text-left justify-start text-xs h-auto py-2 px-3"
-                  onClick={() => handleSuggestedQuestion(question)}
-                >
-                  <MessageSquare className="h-3 w-3 mr-2 flex-shrink-0" />
-                  <span className="truncate">{question}</span>
-                </Button>
-              ))}
-            </CardContent>
-          </Card>
-
-          {/* AI Capabilities */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">AI Capabilities</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3 text-xs">
-                <div className="flex items-start space-x-2">
-                  <Sparkles className="h-3 w-3 text-blue-600 mt-0.5 flex-shrink-0" />
-                  <div>
-                    <p className="font-medium">Task Analysis</p>
-                    <p className="text-gray-500">Analyze and prioritize your tasks</p>
-                  </div>
+      {/* Main Chat Area */}
+      <div className="flex-1 flex flex-col">
+        <Card className="flex-1 flex flex-col backdrop-blur-sm bg-white/90 dark:bg-gray-800/90 border-0 shadow-xl">
+          <CardHeader className="border-b border-gray-200/50 dark:border-gray-700/50">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <div className="relative">
+                  <Avatar className="h-10 w-10">
+                    <AvatarFallback className="bg-gradient-to-r from-blue-600 to-green-600 text-white">
+                      <Bot className="h-5 w-5" />
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-white dark:border-gray-800 animate-pulse"></div>
                 </div>
-                <div className="flex items-start space-x-2">
-                  <Sparkles className="h-3 w-3 text-green-600 mt-0.5 flex-shrink-0" />
-                  <div>
-                    <p className="font-medium">Productivity Tips</p>
-                    <p className="text-gray-500">Get personalized productivity advice</p>
-                  </div>
+                <div>
+                  <h3 className="font-semibold text-gray-900 dark:text-white">SmartTasker AI</h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    {isTyping ? 'Typing...' : 'Online'}
+                  </p>
                 </div>
-                <div className="flex items-start space-x-2">
-                  <Sparkles className="h-3 w-3 text-purple-600 mt-0.5 flex-shrink-0" />
-                  <div>
-                    <p className="font-medium">Team Insights</p>
-                    <p className="text-gray-500">Understand team performance</p>
-                  </div>
+              </div>
+              <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400">
+                <Sparkles className="h-3 w-3 mr-1" />
+                AI Powered
+              </Badge>
+            </div>
+          </CardHeader>
+          
+          {/* Messages */}
+          <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gradient-to-b from-gray-50/50 to-white/50 dark:from-gray-900/50 dark:to-gray-800/50">
+            {messages.length === 0 && (
+              <div className="flex flex-col items-center justify-center h-full text-center animate-fade-in">
+                <div className="w-16 h-16 bg-gradient-to-r from-blue-600 to-green-600 rounded-full flex items-center justify-center mb-4">
+                  <Bot className="h-8 w-8 text-white" />
                 </div>
-                <div className="flex items-start space-x-2">
-                  <Sparkles className="h-3 w-3 text-orange-600 mt-0.5 flex-shrink-0" />
-                  <div>
-                    <p className="font-medium">Planning Support</p>
-                    <p className="text-gray-500">Help with project planning</p>
+                <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+                  Welcome to SmartTasker AI
+                </h3>
+                <p className="text-gray-600 dark:text-gray-400 max-w-md">
+                  {getRoleBasedWelcome()}
+                </p>
+              </div>
+            )}
+            
+            {messages.map((msg, index) => (
+              <MessageBubble
+                key={index}
+                message={msg}
+                user={user}
+                onCreateTask={confirmTask}
+              />
+            ))}
+            
+            {isTyping && (
+              <div className="flex items-center space-x-3 animate-fade-in">
+                <Avatar className="h-8 w-8">
+                  <AvatarFallback className="bg-blue-600 text-white">
+                    <Bot className="h-4 w-4" />
+                  </AvatarFallback>
+                </Avatar>
+                <div className="bg-gray-100 dark:bg-gray-700 rounded-2xl px-4 py-2">
+                  <div className="flex space-x-1">
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
                   </div>
                 </div>
               </div>
-            </CardContent>
-          </Card>
-
-          {/* AI Status */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">Assistant Status</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2 text-xs">
-                <div className="flex justify-between">
-                  <span>Status</span>
-                  <Badge variant="secondary" className="text-xs">
-                    <div className="w-2 h-2 bg-green-500 rounded-full mr-1"></div>
-                    Online
-                  </Badge>
-                </div>
-                <div className="flex justify-between">
-                  <span>Response Time</span>
-                  <span className="text-gray-500">~1 second</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Last Updated</span>
-                  <span className="text-gray-500">Just now</span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+            )}
+            
+            <div ref={messagesEndRef} />
+          </div>
+          
+          {/* Task Preview */}
+          {taskPreview && (
+            <div className="border-t border-gray-200/50 dark:border-gray-700/50 p-4 animate-slide-up">
+              <TaskPreviewCard
+                task={taskPreview}
+                onConfirm={confirmTask}
+                onCancel={clearTaskPreview}
+              />
+            </div>
+          )}
+          
+          {/* Message Input */}
+          <div className="border-t border-gray-200/50 dark:border-gray-700/50 p-4">
+            <div className="flex space-x-3">
+              <Input
+                ref={inputRef}
+                placeholder="Ask me anything or describe a task..."
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                onKeyPress={handleKeyPress}
+                className="flex-1 bg-white/50 dark:bg-gray-700/50 border-gray-200 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 transition-all"
+                disabled={isLoading}
+              />
+              <Button
+                onClick={handleSendMessage}
+                disabled={!message.trim() || isLoading}
+                className="bg-gradient-to-r from-blue-600 to-green-600 hover:from-blue-700 hover:to-green-700 shadow-lg hover:shadow-xl transition-all hover:scale-105"
+              >
+                {isLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
+              </Button>
+            </div>
+          </div>
+        </Card>
       </div>
     </div>
   );
