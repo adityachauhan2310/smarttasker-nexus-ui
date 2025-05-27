@@ -1,4 +1,3 @@
-
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -14,6 +13,7 @@ import UserManagement from "./pages/admin/UserManagement";
 import TeamManagement from "./pages/admin/TeamManagement";
 import AdminTasks from "./pages/admin/AdminTasks";
 import AdminSettings from "./pages/admin/AdminSettings";
+import AdminCalendar from "./pages/admin/AdminCalendar";
 import TeamLeaderDashboard from "./pages/team-leader/TeamLeaderDashboard";
 import TeamCalendar from "./pages/team-leader/TeamCalendar";
 import TaskAssignment from "./pages/team-leader/TaskAssignment";
@@ -87,6 +87,14 @@ const App = () => {
                               }
                             />
                             <Route
+                              path="/admin/calendar"
+                              element={
+                                <ProtectedRoute requiredRole="admin">
+                                  <AdminCalendar />
+                                </ProtectedRoute>
+                              }
+                            />
+                            <Route
                               path="/admin/settings"
                               element={
                                 <ProtectedRoute requiredRole="admin">
@@ -151,6 +159,14 @@ const App = () => {
                               element={
                                 <ProtectedRoute>
                                   <TaskDetail />
+                                </ProtectedRoute>
+                              }
+                            />
+                            <Route
+                              path="/calendar"
+                              element={
+                                <ProtectedRoute>
+                                  <TeamCalendar />
                                 </ProtectedRoute>
                               }
                             />

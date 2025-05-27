@@ -1,4 +1,3 @@
-
 import { useState, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from './use-toast';
@@ -34,6 +33,46 @@ export interface Conversation {
   messages: ChatMessage[];
 }
 
+// Mock task data - in real app, this would come from your backend
+const mockTasks = [
+  {
+    id: '1',
+    title: 'Complete project proposal',
+    description: 'Finalize the Q1 project proposal',
+    status: 'in_progress',
+    priority: 'high',
+    dueDate: new Date().toISOString().split('T')[0], // Today
+    assignedTo: 'current_user'
+  },
+  {
+    id: '2',
+    title: 'Client meeting preparation',
+    description: 'Prepare slides for client presentation',
+    status: 'todo',
+    priority: 'high',
+    dueDate: new Date().toISOString().split('T')[0], // Today
+    assignedTo: 'current_user'
+  },
+  {
+    id: '3',
+    title: 'Review team reports',
+    description: 'Review weekly team performance reports',
+    status: 'todo',
+    priority: 'medium',
+    dueDate: new Date().toISOString().split('T')[0], // Today
+    assignedTo: 'current_user'
+  },
+  {
+    id: '4',
+    title: 'Update project timeline',
+    description: 'Update Gantt chart with new milestones',
+    status: 'todo',
+    priority: 'high',
+    dueDate: new Date(Date.now() - 86400000).toISOString().split('T')[0], // Yesterday (overdue)
+    assignedTo: 'current_user'
+  }
+];
+
 export const useGroqChat = () => {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -43,73 +82,161 @@ export const useGroqChat = () => {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [currentConversationId, setCurrentConversationId] = useState<string>('default');
 
-  // Mock Groq API call - replace with actual Groq integration
+  const getTodaysTasks = () => {
+    const today = new Date().toISOString().split('T')[0];
+    return mockTasks.filter(task => task.dueDate === today);
+  };
+
+  const getOverdueTasks = () => {
+    const today = new Date().toISOString().split('T')[0];
+    return mockTasks.filter(task => task.dueDate < today && task.status !== 'completed');
+  };
+
+  const getTasksByStatus = (status: string) => {
+    return mockTasks.filter(task => task.status === status);
+  };
+
+  // Enhanced Groq API call with better task understanding
   const callGroqAPI = async (userMessage: string): Promise<string> => {
-    // Simulate API delay
     await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 2000));
     
-    // Mock responses based on message content
-    if (userMessage.toLowerCase().includes('create') || userMessage.toLowerCase().includes('add task')) {
-      return `I'll help you create that task. Let me extract the details from your message: "${userMessage}"`;
+    const message = userMessage.toLowerCase();
+    
+    // Task queries - show actual tasks, don't suggest creating new ones
+    if (message.includes('tasks for today') || message.includes('today\'s tasks') || message.includes('what tasks') && message.includes('today')) {
+      const todaysTasks = getTodaysTasks();
+      if (todaysTasks.length === 0) {
+        return `You have no tasks scheduled for today! 🎉 This is a great opportunity to:
+
+• Work on long-term projects
+• Catch up on overdue tasks
+• Plan for tomorrow
+• Take some time for learning or improvement
+
+Would you like me to show your overdue tasks or help you plan for tomorrow?`;
+      }
+
+      const taskList = todaysTasks.map(task => 
+        `**${task.priority === 'high' ? '🔴' : task.priority === 'medium' ? '🟡' : '🟢'} ${task.title}**
+   ${task.description}
+   Status: ${task.status.replace('_', ' ').toUpperCase()}`
+      ).join('\n\n');
+
+      return `Here are your tasks for today (${todaysTasks.length} tasks):
+
+${taskList}
+
+Based on priority, I recommend starting with the high-priority tasks first. Would you like me to help you create a schedule or break down any of these tasks?`;
     }
     
-    if (userMessage.toLowerCase().includes('tasks for today') || userMessage.toLowerCase().includes('today')) {
-      return `Based on your current tasks, you have 3 tasks due today:
+    if (message.includes('overdue') || message.includes('late tasks') || message.includes('behind')) {
+      const overdueTasks = getOverdueTasks();
+      if (overdueTasks.length === 0) {
+        return `Great news! You have no overdue tasks. You're staying on top of your work! 👏
+
+Keep up the excellent time management. Would you like me to show your upcoming tasks or help you plan ahead?`;
+      }
+
+      const overdueList = overdueTasks.map(task => 
+        `🔴 **${task.title}** (${Math.ceil((Date.now() - new Date(task.dueDate).getTime()) / 86400000)} days overdue)
+   ${task.description}
+   Originally due: ${new Date(task.dueDate).toLocaleDateString()}`
+      ).join('\n\n');
+
+      return `You have ${overdueTasks.length} overdue task(s) that need immediate attention:
+
+${overdueList}
+
+I recommend addressing these as soon as possible. Would you like me to help you prioritize these or break them into smaller, manageable steps?`;
+    }
+
+    // Task creation detection
+    if (message.includes('create') || message.includes('add') || message.includes('new task') || 
+        message.includes('schedule') || message.includes('remind me') || message.includes('meeting')) {
+      return `I'll help you create that task. Let me extract the details from your message: "${userMessage}"
+
+Please review the task details below and confirm if everything looks correct.`;
+    }
+    
+    if (message.includes('priority') || message.includes('focus') || message.includes('what should i')) {
+      const todaysTasks = getTodaysTasks();
+      const overdueTasks = getOverdueTasks();
       
-**High Priority:**
-- Complete project proposal (Due: 5:00 PM)
-- Client meeting preparation (Due: 2:00 PM)
+      if (overdueTasks.length > 0) {
+        return `Based on your current tasks, here's what you should prioritize:
 
-**Medium Priority:**
-- Review team reports (Due: End of day)
+**🚨 URGENT - Handle Overdue Tasks First:**
+${overdueTasks.map(task => `• ${task.title} (${Math.ceil((Date.now() - new Date(task.dueDate).getTime()) / 86400000)} days overdue)`).join('\n')}
 
-Would you like me to help you prioritize these or create a schedule?`;
+**📅 Today's High Priority Tasks:**
+${todaysTasks.filter(task => task.priority === 'high').map(task => `• ${task.title}`).join('\n')}
+
+I recommend tackling overdue tasks first to get back on track, then focus on today's high-priority items. Would you like me to help you create a detailed schedule?`;
+      }
+
+      return `Based on your deadlines and task priorities, here's your focus plan:
+
+**🔥 High Priority (Do First):**
+${todaysTasks.filter(task => task.priority === 'high').map(task => `• ${task.title} - ${task.description}`).join('\n')}
+
+**⚡ Medium Priority (Do Next):**
+${todaysTasks.filter(task => task.priority === 'medium').map(task => `• ${task.title} - ${task.description}`).join('\n')}
+
+This sequence ensures you handle critical deadlines while maintaining steady progress. Would you like me to set reminders or break any of these into smaller steps?`;
     }
-    
-    if (userMessage.toLowerCase().includes('overdue')) {
-      return `You have 2 overdue tasks that need immediate attention:
 
-🔴 **Urgent:** Submit quarterly budget (Overdue by 2 days)
-🟡 **High:** Update project timeline (Overdue by 1 day)
+    if (message.includes('complete') || message.includes('done') || message.includes('finished')) {
+      return `I can help you mark tasks as complete! However, I need to be connected to your task management system to make actual changes.
 
-I recommend addressing the quarterly budget first. Would you like me to help you break these down into smaller steps?`;
+Currently available tasks you might want to mark as complete:
+${getTodaysTasks().filter(task => task.status !== 'completed').map(task => `• ${task.title}`).join('\n')}
+
+Which task did you complete? Just let me know the task name and I'll help you update it.`;
     }
-    
-    if (userMessage.toLowerCase().includes('priority') || userMessage.toLowerCase().includes('focus')) {
-      return `Based on your deadlines and task priorities, I recommend focusing on:
 
-1. **Client meeting preparation** (Due in 4 hours) - High impact
-2. **Complete project proposal** (Due today) - Critical deadline
-3. **Review team reports** (Due today) - Can be done after meetings
+    // General helpful response
+    return `I understand you're asking about: "${userMessage}". 
 
-This sequence ensures you're prepared for important meetings while meeting critical deadlines. Would you like me to set reminders for these?`;
-    }
-    
-    return `I understand you're asking about: "${userMessage}". I'm here to help you manage your tasks more effectively. You can ask me to:
+I'm your SmartTasker AI assistant and I can help you with:
 
+🎯 **Task Management:**
+• Show your tasks for today, this week, or by status
 • Create new tasks from natural language
-• Show your task schedule and priorities  
-• Mark tasks as complete
-• Analyze your workload and suggest optimizations
-• Set reminders and deadlines
+• Mark tasks as complete or update their status
+• Analyze your workload and suggest priorities
 
-What would you like to do next?`;
+📊 **Analytics & Insights:**
+• Track your productivity patterns
+• Identify bottlenecks in your workflow  
+• Suggest optimal work schedules
+• Provide deadline alerts and reminders
+
+${user?.role === 'admin' ? `🔧 **Admin Functions:**
+• View system-wide task statistics
+• Manage user accounts and permissions
+• Generate team performance reports
+• Configure system settings` : ''}
+
+${user?.role === 'team_leader' ? `👥 **Team Leadership:**
+• Assign tasks to team members
+• Monitor team progress and workload
+• Generate team performance insights
+• Manage team schedules and deadlines` : ''}
+
+What would you like me to help you with?`;
   };
 
   const extractTaskFromMessage = (message: string): TaskData | null => {
-    // Simple task extraction logic - in real implementation, use NLP
-    const taskKeywords = ['create', 'add', 'task', 'meeting', 'deadline', 'reminder'];
+    const taskKeywords = ['create', 'add', 'task', 'meeting', 'deadline', 'reminder', 'schedule'];
     const hasTaskIntent = taskKeywords.some(keyword => 
       message.toLowerCase().includes(keyword)
     );
     
     if (!hasTaskIntent) return null;
     
-    // Extract potential task title
-    const titleMatch = message.match(/(?:create|add)(?:\s+(?:a\s+)?task[:\s]*)?([^.!?]+)/i);
+    const titleMatch = message.match(/(?:create|add|schedule)(?:\s+(?:a\s+)?task[:\s]*)?([^.!?]+)/i);
     const title = titleMatch ? titleMatch[1].trim() : message;
     
-    // Extract date/time
     const dateMatch = message.match(/(monday|tuesday|wednesday|thursday|friday|saturday|sunday|tomorrow|today|next week)/i);
     const timeMatch = message.match(/(\d{1,2}(?::\d{2})?\s*(?:am|pm))/i);
     
@@ -120,7 +247,6 @@ What would you like to do next?`;
       dueDate = `${date}${time}`;
     }
     
-    // Extract priority
     let priority: TaskData['priority'] = 'medium';
     if (message.toLowerCase().includes('urgent') || message.toLowerCase().includes('asap')) {
       priority = 'urgent';
@@ -152,13 +278,11 @@ What would you like to do next?`;
     setIsLoading(true);
     
     try {
-      // Check for task creation intent
       const taskData = extractTaskFromMessage(content);
       if (taskData) {
         setTaskPreview(taskData);
       }
       
-      // Call Groq API
       const aiResponse = await callGroqAPI(content);
       
       const aiMessage: ChatMessage = {
@@ -184,7 +308,6 @@ What would you like to do next?`;
   }, [toast]);
 
   const confirmTask = useCallback((taskData: TaskData) => {
-    // Here you would save the task to your backend
     console.log('Creating task:', taskData);
     setTaskPreview(null);
     
@@ -193,7 +316,6 @@ What would you like to do next?`;
       description: `"${taskData.title}" has been added to your tasks.`,
     });
     
-    // Add confirmation message
     const confirmMessage: ChatMessage = {
       id: Date.now().toString(),
       type: 'ai',
@@ -217,7 +339,6 @@ What would you like to do next?`;
 
   const switchConversation = useCallback((conversationId: string) => {
     setCurrentConversationId(conversationId);
-    // In a real app, load conversation messages from storage
     setMessages([]);
     setTaskPreview(null);
   }, []);
