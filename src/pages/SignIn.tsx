@@ -87,9 +87,9 @@ const SignIn = () => {
   };
 
   return (
-    <div className="h-screen w-full overflow-hidden relative bg-slate-950">
-      {/* Animated Background */}
-      <div className="absolute inset-0">
+    <div className="min-h-screen w-full overflow-auto relative bg-slate-950">
+      {/* Animated Background - Fixed position for proper scrolling */}
+      <div className="fixed inset-0 z-0">
         {/* Base gradient */}
         <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-blue-900/50 to-purple-900/50"></div>
         
@@ -102,49 +102,50 @@ const SignIn = () => {
         <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:50px_50px] opacity-30"></div>
       </div>
 
-      <div className="relative z-10 h-full flex items-center justify-center p-6">
-        <div className="w-full max-w-4xl grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
+      {/* Scrollable content container */}
+      <div className="relative z-10 min-h-screen flex items-center justify-center p-4 sm:p-6">
+        <div className="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8 items-center my-8">
           
           {/* Left Side - Branding */}
-          <div className="space-y-6 text-center lg:text-left order-2 lg:order-1">
+          <div className="space-y-4 lg:space-y-6 text-center lg:text-left order-2 lg:order-1">
             {/* Logo */}
-            <div className="group">
+            <div className="group flex justify-center lg:justify-start">
               <div className="relative inline-flex items-center justify-center">
                 <div className="absolute -inset-2 bg-gradient-to-r from-blue-600 via-purple-600 to-green-600 rounded-2xl blur-lg opacity-50 group-hover:opacity-75 transition-all duration-700"></div>
-                <div className="relative w-16 h-16 bg-gradient-to-br from-blue-600 via-purple-600 to-green-600 rounded-2xl flex items-center justify-center transform group-hover:scale-110 transition-all duration-500">
-                  <Bot className="text-white h-8 w-8" />
+                <div className="relative w-12 h-12 lg:w-16 lg:h-16 bg-gradient-to-br from-blue-600 via-purple-600 to-green-600 rounded-2xl flex items-center justify-center transform group-hover:scale-110 transition-all duration-500">
+                  <Bot className="text-white h-6 w-6 lg:h-8 lg:w-8" />
                 </div>
               </div>
             </div>
             
             {/* Title */}
-            <div className="space-y-3">
-              <h1 className="text-5xl lg:text-6xl font-bold bg-gradient-to-r from-white via-blue-100 to-purple-100 bg-clip-text text-transparent">
+            <div className="space-y-2 lg:space-y-3">
+              <h1 className="text-3xl sm:text-4xl lg:text-5xl xl:text-6xl font-bold bg-gradient-to-r from-white via-blue-100 to-purple-100 bg-clip-text text-transparent leading-tight">
                 SmartTasker AI
               </h1>
-              <p className="text-xl text-gray-300 font-light">
+              <p className="text-lg lg:text-xl text-gray-300 font-light">
                 Intelligent Task Management Platform
               </p>
             </div>
             
             {/* Features */}
-            <div className="flex flex-wrap justify-center lg:justify-start gap-4 text-sm">
-              <div className="flex items-center space-x-2 bg-white/10 backdrop-blur-sm rounded-full px-4 py-2 border border-white/20 hover:bg-white/20 transition-all duration-300">
+            <div className="flex flex-wrap justify-center lg:justify-start gap-3 text-sm">
+              <div className="flex items-center space-x-2 bg-white/10 backdrop-blur-sm rounded-full px-3 py-2 border border-white/20 hover:bg-white/20 transition-all duration-300">
                 <Zap className="h-4 w-4 text-yellow-400" />
                 <span className="text-white">AI Powered</span>
               </div>
-              <div className="flex items-center space-x-2 bg-white/10 backdrop-blur-sm rounded-full px-4 py-2 border border-white/20 hover:bg-white/20 transition-all duration-300">
+              <div className="flex items-center space-x-2 bg-white/10 backdrop-blur-sm rounded-full px-3 py-2 border border-white/20 hover:bg-white/20 transition-all duration-300">
                 <Shield className="h-4 w-4 text-green-400" />
                 <span className="text-white">Secure</span>
               </div>
-              <div className="flex items-center space-x-2 bg-white/10 backdrop-blur-sm rounded-full px-4 py-2 border border-white/20 hover:bg-white/20 transition-all duration-300">
+              <div className="flex items-center space-x-2 bg-white/10 backdrop-blur-sm rounded-full px-3 py-2 border border-white/20 hover:bg-white/20 transition-all duration-300">
                 <Rocket className="h-4 w-4 text-purple-400" />
                 <span className="text-white">Enterprise</span>
               </div>
             </div>
 
             {/* Tech Docs Button */}
-            <div className="pt-4">
+            <div className="pt-2 lg:pt-4">
               <Button
                 variant="outline"
                 onClick={() => setShowTechDocs(true)}
@@ -157,7 +158,7 @@ const SignIn = () => {
           </div>
 
           {/* Right Side - Authentication */}
-          <div className="space-y-6 order-1 lg:order-2">
+          <div className="space-y-4 lg:space-y-6 order-1 lg:order-2 w-full max-w-md mx-auto lg:max-w-none">
             
             {/* Demo Credentials */}
             <Card className="backdrop-blur-xl bg-white/10 border border-white/20 shadow-2xl hover:shadow-blue-500/20 transition-all duration-500">
@@ -168,10 +169,10 @@ const SignIn = () => {
                   <Sparkles className="h-4 w-4" />
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3">
+              <CardContent className="space-y-2">
                 <div className="grid gap-2">
                   <div 
-                    className="p-3 bg-gradient-to-r from-blue-500/20 to-blue-600/10 backdrop-blur-sm rounded-lg border border-blue-400/30 hover:from-blue-500/30 hover:to-blue-600/20 transition-all duration-300 cursor-pointer group" 
+                    className="p-2 lg:p-3 bg-gradient-to-r from-blue-500/20 to-blue-600/10 backdrop-blur-sm rounded-lg border border-blue-400/30 hover:from-blue-500/30 hover:to-blue-600/20 transition-all duration-300 cursor-pointer group" 
                     onClick={() => { setEmail('admin@smarttasker.ai'); setPassword('password123'); }}
                   >
                     <div className="flex items-center justify-between">
@@ -185,7 +186,7 @@ const SignIn = () => {
                   </div>
                   
                   <div 
-                    className="p-3 bg-gradient-to-r from-green-500/20 to-green-600/10 backdrop-blur-sm rounded-lg border border-green-400/30 hover:from-green-500/30 hover:to-green-600/20 transition-all duration-300 cursor-pointer group"
+                    className="p-2 lg:p-3 bg-gradient-to-r from-green-500/20 to-green-600/10 backdrop-blur-sm rounded-lg border border-green-400/30 hover:from-green-500/30 hover:to-green-600/20 transition-all duration-300 cursor-pointer group"
                     onClick={() => { setEmail('teamlead@smarttasker.ai'); setPassword('password123'); }}
                   >
                     <div className="flex items-center justify-between">
@@ -199,7 +200,7 @@ const SignIn = () => {
                   </div>
                   
                   <div 
-                    className="p-3 bg-gradient-to-r from-purple-500/20 to-purple-600/10 backdrop-blur-sm rounded-lg border border-purple-400/30 hover:from-purple-500/30 hover:to-purple-600/20 transition-all duration-300 cursor-pointer group"
+                    className="p-2 lg:p-3 bg-gradient-to-r from-purple-500/20 to-purple-600/10 backdrop-blur-sm rounded-lg border border-purple-400/30 hover:from-purple-500/30 hover:to-purple-600/20 transition-all duration-300 cursor-pointer group"
                     onClick={() => { setEmail('member@smarttasker.ai'); setPassword('password123'); }}
                   >
                     <div className="flex items-center justify-between">
