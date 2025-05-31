@@ -112,7 +112,7 @@ const TeamLeaderDashboard = () => {
                       <h4 className="font-medium text-sm">{member.name}</h4>
                       <span className="text-sm text-gray-500">{member.efficiency}%</span>
                     </div>
-                    <Progress value={member.efficiency} className="h-2" />
+                    <Progress value={member.efficiency} className="h-3" />
                     <p className="text-xs text-gray-500 mt-1">{member.activeTasks} active tasks</p>
                   </div>
                 </div>

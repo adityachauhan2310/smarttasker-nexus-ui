@@ -98,7 +98,7 @@ const TeamMemberDashboard = () => {
             <TrendingUp className="h-4 w-4" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{completionRate.toFixed(0)}%</div>
+            <div className="text-2xl font-bold">{Math.round(completionRate)}%</div>
             <p className="text-xs text-purple-100">This month</p>
           </CardContent>
         </Card>
@@ -115,9 +115,9 @@ const TeamMemberDashboard = () => {
             <div>
               <div className="flex justify-between text-sm mb-2">
                 <span>Overall Progress</span>
-                <span>{completionRate.toFixed(0)}%</span>
+                <span>{Math.round(completionRate)}%</span>
               </div>
-              <Progress value={completionRate} className="h-2" />
+              <Progress value={completionRate} className="h-3" />
             </div>
             
             <div className="grid grid-cols-2 gap-4 mt-6">
