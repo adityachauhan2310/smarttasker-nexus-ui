@@ -83,14 +83,6 @@ const CalendarView: React.FC<CalendarViewProps> = ({
     onDateSelect?.(date);
   };
 
-  const handlePrevMonth = () => {
-    setCurrentDate(subMonths(currentDate, 1));
-  };
-
-  const handleNextMonth = () => {
-    setCurrentDate(addMonths(currentDate, 1));
-  };
-
   const handlePrevPeriod = () => {
     if (viewMode === 'day') {
       setCurrentDate(addDays(currentDate, -1));
@@ -364,28 +356,10 @@ const CalendarView: React.FC<CalendarViewProps> = ({
         </div>
       </div>
 
-      {/* Calendar Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Mini Calendar */}
-        <Card className="backdrop-blur-sm bg-white/95 dark:bg-gray-800/95 border-0 shadow-xl transition-all duration-300 hover:shadow-2xl animate-ultra-slide-up delay-100">
-          <CardHeader>
-            <CardTitle className="flex items-center space-x-2">
-              <CalendarIcon className="h-5 w-5 text-blue-600" />
-              <span>Calendar</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Calendar
-              mode="single"
-              selected={selectedDate}
-              onSelect={(date) => date && handleDateClick(date)}
-              className="rounded-md border pointer-events-auto"
-            />
-          </CardContent>
-        </Card>
-
+      {/* Single Calendar Layout */}
+      <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
         {/* Main Calendar View */}
-        <div className="lg:col-span-2">
+        <div className="xl:col-span-3">
           <Card className="backdrop-blur-sm bg-white/95 dark:bg-gray-800/95 border-0 shadow-xl transition-all duration-300 hover:shadow-2xl animate-ultra-slide-up delay-200">
             <CardHeader>
               <div className="flex items-center justify-between">
@@ -420,7 +394,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({
                 </div>
               </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-6">
               {viewMode === 'month' && renderMonthView()}
               {viewMode === 'week' && renderWeekView()}
               {viewMode === 'day' && renderDayView()}
