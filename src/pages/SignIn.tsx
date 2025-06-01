@@ -1,16 +1,17 @@
+
 import React, { useState } from 'react';
-import { useRouter } from 'next/router';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Mail, Lock, Shield, Users, User } from 'lucide-react';
-import { useToast } from "@/components/ui/use-toast"
+import { useToast } from "@/hooks/use-toast"
 
 const SignIn = () => {
   const { login } = useAuth();
-  const router = useRouter();
+  const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isDemoModalOpen, setDemoModalOpen] = useState(false);
@@ -34,8 +35,8 @@ const SignIn = () => {
       const user = await simulateAuthentication(email, password);
 
       if (user) {
-        login(user);
-        router.push('/'); // Redirect to dashboard or home page
+        await login(email, password);
+        navigate('/'); // Redirect to dashboard or home page
       } else {
         toast({
           variant: "destructive",
@@ -113,14 +114,10 @@ const SignIn = () => {
 const DemoModal = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) => {
   const { login } = useAuth();
 
-  const handleDemoAccess = (role: 'admin' | 'team_leader' | 'team_member') => {
+  const handleDemoAccess = async (role: 'admin' | 'team_leader' | 'team_member') => {
     // Simulate login with demo credentials
-    login({
-      id: `demo-${role}`,
-      email: `demo@${role}.com`,
-      name: `Demo ${role.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}`,
-      role: role
-    });
+    const demoEmail = `demo@${role}.com`;
+    await login(demoEmail, 'password123');
     onClose();
   };
 
