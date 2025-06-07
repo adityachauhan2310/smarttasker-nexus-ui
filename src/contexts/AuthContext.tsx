@@ -1,122 +1,125 @@
-
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { User, AuthContextType } from '../types/auth';
+import apiClient from '../client/api/apiClient';
+import { useLogin, useCurrentUser, useLogout } from '../hooks/useApi';
+import { ApiResponse, LoginResponse, UserResponse } from '../types/api';
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+// Create a default value for AuthContext to avoid providing undefined
+const defaultContextValue: AuthContextType = {
+  user: null,
+  loading: true,
+  login: async () => { throw new Error('Not implemented'); },
+  logout: () => {},
+  hasPermission: () => false,
+};
+
+const AuthContext = createContext<AuthContextType>(defaultContextValue);
 
 export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
+  return useContext(AuthContext);
 };
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  console.log("Rendering AuthProvider");
+  
+  // State
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
-
+  const [loading, setLoading] = useState<boolean>(true);
+  
+  // Initialize React Query client
+  const queryClient = useQueryClient();
+  
+  // React Query hooks with minimal configuration
+  const loginMutation = useLogin();
+  const logoutMutation = useLogout();
+  const { refetch: fetchUser } = useCurrentUser({ 
+    queryKey: ['currentUser'],
+    enabled: false 
+  });
+  
+  // Check auth status on mount
   useEffect(() => {
-    checkAuthStatus();
-  }, []);
-
-  const checkAuthStatus = async () => {
-    try {
-      const token = localStorage.getItem('auth_token');
-      if (token) {
-        // Simulate API call to verify token
-        const userData = JSON.parse(localStorage.getItem('user_data') || '{}');
-        setUser(userData);
+    const checkAuth = async () => {
+      try {
+        const hasToken = apiClient.restoreAuthToken();
+        
+        if (!hasToken) {
+          setLoading(false);
+          return;
+        }
+        
+        try {
+          const response = await fetchUser();
+          if (response.data?.data?.user) {
+            setUser(response.data.data.user);
+          }
+        } catch (error) {
+          console.error("Auth check failed:", error);
+          apiClient.clearAuthToken();
+        } finally {
+          setLoading(false);
+        }
+      } catch (error) {
+        console.error("Auth check error:", error);
+        setLoading(false);
       }
-    } catch (error) {
-      console.error('Auth check failed:', error);
-      localStorage.removeItem('auth_token');
-      localStorage.removeItem('user_data');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const login = async (email: string, password: string) => {
+    };
+    
+    checkAuth();
+  }, []); // Only run on mount
+  
+  // Login function
+  const login = useCallback(async (email: string, password: string) => {
     try {
-      // Simulate login API call
-      const mockUsers = [
-        {
-          id: '1',
-          email: 'admin@smarttasker.ai',
-          name: 'Admin User',
-          role: 'admin' as const,
-          avatar: '/api/placeholder/40/40',
-          isActive: true,
-          createdAt: new Date().toISOString(),
-          lastLogin: new Date().toISOString(),
-        },
-        {
-          id: '2',
-          email: 'teamlead@smarttasker.ai',
-          name: 'Team Leader',
-          role: 'team_leader' as const,
-          avatar: '/api/placeholder/40/40',
-          isActive: true,
-          createdAt: new Date().toISOString(),
-          lastLogin: new Date().toISOString(),
-        },
-        {
-          id: '3',
-          email: 'member@smarttasker.ai',
-          name: 'Team Member',
-          role: 'team_member' as const,
-          avatar: '/api/placeholder/40/40',
-          isActive: true,
-          createdAt: new Date().toISOString(),
-          lastLogin: new Date().toISOString(),
-        },
-      ];
-
-      const user = mockUsers.find(u => u.email === email && password === 'password123');
-      if (!user) {
-        throw new Error('Invalid email or password');
-      }
-
-      const token = 'mock_jwt_token_' + user.id;
-      localStorage.setItem('auth_token', token);
-      localStorage.setItem('user_data', JSON.stringify(user));
-      setUser(user);
+      const result = await loginMutation.mutateAsync({ email, password });
       
-      return user;
-    } catch (error) {
+      if (result?.data?.user) {
+        setUser(result.data.user);
+        return result.data.user;
+      }
+      
+      throw new Error("Invalid response from server");
+    } catch (error: any) {
+      console.error("Login error:", error);
       throw error;
     }
-  };
-
-  const logout = () => {
-    localStorage.removeItem('auth_token');
-    localStorage.removeItem('user_data');
+  }, [loginMutation]);
+  
+  // Logout function
+  const logout = useCallback(() => {
+    logoutMutation.mutate();
     setUser(null);
-  };
-
-  const hasPermission = (requiredRole?: string) => {
-    if (!user || !requiredRole) return true;
+  }, [logoutMutation]);
+  
+  // Permission check
+  const hasPermission = useCallback((requiredRole?: string) => {
+    if (!user || !requiredRole) return false;
     
-    const roleHierarchy = {
+    const roleHierarchy: Record<string, number> = {
       admin: 3,
       team_leader: 2,
       team_member: 1,
     };
     
-    const userLevel = roleHierarchy[user.role as keyof typeof roleHierarchy];
-    const requiredLevel = roleHierarchy[requiredRole as keyof typeof roleHierarchy];
+    const userLevel = roleHierarchy[user.role] || 0;
+    const requiredLevel = roleHierarchy[requiredRole] || 0;
     
     return userLevel >= requiredLevel;
-  };
-
-  const value: AuthContextType = {
+  }, [user]);
+  
+  // Create context value object with useMemo to prevent unnecessary re-renders
+  const contextValue = useMemo(() => ({
     user,
+    loading,
     login,
     logout,
-    loading,
-    hasPermission,
-  };
-
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+    hasPermission
+  }), [user, loading, login, logout, hasPermission]);
+  
+  return (
+    <AuthContext.Provider value={contextValue}>
+      {children}
+    </AuthContext.Provider>
+  );
 };

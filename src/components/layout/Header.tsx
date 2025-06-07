@@ -1,5 +1,4 @@
-
-import React from 'react';
+import React, { memo, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useNotifications } from '../../contexts/NotificationContext';
@@ -17,10 +16,22 @@ import { Badge } from '@/components/ui/badge';
 import { Bell, LogOut, Moon, Sun, User } from 'lucide-react';
 import NotificationCenter from '../ui/NotificationCenter';
 
-const Header = () => {
+// Use memo to prevent unnecessary re-renders
+const Header = memo(() => {
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const { unreadCount } = useNotifications();
+  
+  // Use useCallback for event handlers
+  const handleLogout = useCallback(() => {
+    logout();
+  }, [logout]);
+  
+  const handleThemeToggle = useCallback(() => {
+    toggleTheme();
+  }, [toggleTheme]);
+
+  console.log("Rendering Header component");
 
   return (
     <header className="h-16 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between px-6">
@@ -35,7 +46,7 @@ const Header = () => {
         <Button
           variant="ghost"
           size="icon"
-          onClick={toggleTheme}
+          onClick={handleThemeToggle}
           className="text-gray-600 dark:text-gray-300"
         >
           {theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
@@ -84,7 +95,7 @@ const Header = () => {
               Profile
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={logout} className="cursor-pointer text-red-600">
+            <DropdownMenuItem onClick={handleLogout} className="cursor-pointer text-red-600">
               <LogOut className="mr-2 h-4 w-4" />
               Log out
             </DropdownMenuItem>
@@ -93,6 +104,8 @@ const Header = () => {
       </div>
     </header>
   );
-};
+});
+
+Header.displayName = 'Header';
 
 export default Header;

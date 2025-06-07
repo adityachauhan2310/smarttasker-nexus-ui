@@ -1,5 +1,4 @@
-
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
@@ -7,16 +6,19 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Calendar, CheckCircle, Clock, Target, TrendingUp } from 'lucide-react';
 
 const TeamMemberDashboard = () => {
-  const stats = {
+  // Use useMemo to ensure these objects are not recreated on every render
+  const stats = useMemo(() => ({
     totalTasks: 24,
     completedTasks: 18,
     inProgressTasks: 4,
     overdueTasks: 2,
-  };
+  }), []);
 
-  const completionRate = (stats.completedTasks / stats.totalTasks) * 100;
+  const completionRate = useMemo(() => 
+    (stats.completedTasks / stats.totalTasks) * 100
+  , [stats.completedTasks, stats.totalTasks]);
 
-  const recentTasks = [
+  const recentTasks = useMemo(() => [
     {
       id: '1',
       title: 'Update user authentication flow',
@@ -39,13 +41,13 @@ const TeamMemberDashboard = () => {
       priority: 'low',
       dueDate: '2024-01-20',
     },
-  ];
+  ], []);
 
-  const upcomingDeadlines = [
+  const upcomingDeadlines = useMemo(() => [
     { task: 'Design dashboard mockups', dueDate: '2024-01-18', priority: 'medium' },
     { task: 'Write API documentation', dueDate: '2024-01-20', priority: 'low' },
     { task: 'Review pull requests', dueDate: '2024-01-22', priority: 'high' },
-  ];
+  ], []);
 
   return (
     <div className="space-y-6">

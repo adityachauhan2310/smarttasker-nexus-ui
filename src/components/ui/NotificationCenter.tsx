@@ -1,5 +1,4 @@
-
-import React from 'react';
+import React, { memo, useCallback, useMemo } from 'react';
 import { useNotifications } from '../../contexts/NotificationContext';
 import {
   DropdownMenu,
@@ -16,10 +15,73 @@ interface NotificationCenterProps {
   children: React.ReactNode;
 }
 
-const NotificationCenter: React.FC<NotificationCenterProps> = ({ children }) => {
+// Memoize the notification item to prevent unnecessary re-renders
+const NotificationItem = memo(({ 
+  notification, 
+  markAsRead, 
+  clearNotification,
+  getIcon 
+}: { 
+  notification: any, 
+  markAsRead: (id: string) => void, 
+  clearNotification: (id: string) => void,
+  getIcon: (type: string) => React.ReactNode 
+}) => {
+  const handleMarkAsRead = useCallback(() => {
+    markAsRead(notification.id);
+  }, [notification.id, markAsRead]);
+  
+  const handleClear = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    clearNotification(notification.id);
+  }, [notification.id, clearNotification]);
+  
+  return (
+    <div
+      key={notification.id}
+      className={`p-3 rounded-lg border cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-gray-800 ${
+        !notification.read ? 'bg-blue-50 dark:bg-blue-900/10 border-blue-200' : ''
+      }`}
+      onClick={handleMarkAsRead}
+    >
+      <div className="flex items-start justify-between">
+        <div className="flex items-start space-x-3 flex-1">
+          {getIcon(notification.type)}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center space-x-2">
+              <p className="font-medium text-sm">{notification.title}</p>
+              {!notification.read && (
+                <Badge variant="secondary" className="h-2 w-2 p-0 rounded-full bg-blue-500" />
+              )}
+            </div>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+              {notification.message}
+            </p>
+            <p className="text-xs text-gray-500 mt-2">
+              {formatDistanceToNow(notification.timestamp, { addSuffix: true })}
+            </p>
+          </div>
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleClear}
+          className="h-6 w-6 p-0 text-gray-400 hover:text-gray-600"
+        >
+          <X className="h-3 w-3" />
+        </Button>
+      </div>
+    </div>
+  );
+});
+
+NotificationItem.displayName = 'NotificationItem';
+
+// Use memo for the main component
+const NotificationCenter: React.FC<NotificationCenterProps> = memo(({ children }) => {
   const { notifications, markAsRead, markAllAsRead, clearNotification } = useNotifications();
 
-  const getIcon = (type: string) => {
+  const getIcon = useCallback((type: string) => {
     switch (type) {
       case 'success':
         return <CheckCircle className="h-4 w-4 text-green-500" />;
@@ -30,7 +92,18 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ children }) => 
       default:
         return <Info className="h-4 w-4 text-blue-500" />;
     }
-  };
+  }, []);
+
+  const handleMarkAllAsRead = useCallback(() => {
+    markAllAsRead();
+  }, [markAllAsRead]);
+
+  const hasUnread = useMemo(() => 
+    notifications.some(n => !n.read),
+    [notifications]
+  );
+
+  console.log("Rendering NotificationCenter");
 
   return (
     <DropdownMenu>
@@ -41,11 +114,11 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ children }) => 
         <div className="p-4 border-b">
           <div className="flex items-center justify-between">
             <h3 className="font-semibold">Notifications</h3>
-            {notifications.some(n => !n.read) && (
+            {hasUnread && (
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={markAllAsRead}
+                onClick={handleMarkAllAsRead}
                 className="text-xs"
               >
                 Mark all read
@@ -61,44 +134,13 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ children }) => 
           ) : (
             <div className="space-y-2 p-2">
               {notifications.map((notification) => (
-                <div
+                <NotificationItem
                   key={notification.id}
-                  className={`p-3 rounded-lg border cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-gray-800 ${
-                    !notification.read ? 'bg-blue-50 dark:bg-blue-900/10 border-blue-200' : ''
-                  }`}
-                  onClick={() => markAsRead(notification.id)}
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-start space-x-3 flex-1">
-                      {getIcon(notification.type)}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center space-x-2">
-                          <p className="font-medium text-sm">{notification.title}</p>
-                          {!notification.read && (
-                            <Badge variant="secondary" className="h-2 w-2 p-0 rounded-full bg-blue-500" />
-                          )}
-                        </div>
-                        <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                          {notification.message}
-                        </p>
-                        <p className="text-xs text-gray-500 mt-2">
-                          {formatDistanceToNow(notification.timestamp, { addSuffix: true })}
-                        </p>
-                      </div>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        clearNotification(notification.id);
-                      }}
-                      className="h-6 w-6 p-0 text-gray-400 hover:text-gray-600"
-                    >
-                      <X className="h-3 w-3" />
-                    </Button>
-                  </div>
-                </div>
+                  notification={notification}
+                  markAsRead={markAsRead}
+                  clearNotification={clearNotification}
+                  getIcon={getIcon}
+                />
               ))}
             </div>
           )}
@@ -106,6 +148,8 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ children }) => 
       </DropdownMenuContent>
     </DropdownMenu>
   );
-};
+});
+
+NotificationCenter.displayName = 'NotificationCenter';
 
 export default NotificationCenter;

@@ -19,7 +19,7 @@ cd <YOUR_PROJECT_NAME>
 npm i
 
 # Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
+npm run start-dev
 ```
 
 **Edit a file directly in GitHub**
@@ -44,4 +44,38 @@ This project is built with:
 - TypeScript
 - React
 - shadcn-ui
-- Tailwind CSS
+- Tailwind C
+
+## Development Environment Setup
+
+### Running the Application
+
+To properly run the application in development mode:
+
+```sh
+# This will start MongoDB and Redis containers, the backend server, and the frontend development server
+npm run start-dev
+```
+
+The `start-dev` script ensures that:
+1. Docker is running
+2. MongoDB and Redis containers are started
+3. Backend server is started
+4. Frontend development server is started
+
+### Database Services
+
+The application requires:
+- MongoDB (database)
+- Redis (caching)
+
+These services are configured in the `docker-compose.yml` file and will be automatically started by the `start-dev` script.
+
+### Troubleshooting
+
+If you encounter login issues or API connection problems:
+1. Make sure Docker is running
+2. Verify the MongoDB and Redis containers are running with `docker ps`
+3. If containers are not running, start them with `docker-compose up -d`
+4. Restart the application with `npm run start-dev`
+
