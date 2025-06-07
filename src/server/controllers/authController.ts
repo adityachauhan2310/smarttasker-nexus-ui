@@ -120,17 +120,33 @@ export const refreshAccessToken = async (req: Request, res: Response, next: Next
   try {
     // Get refresh token from cookie
     const { refreshToken } = req.cookies;
-
     if (!refreshToken) {
       next(new ErrorResponse('Refresh token not found', 401));
       return;
     }
-
     // Verify refresh token (handled in middleware)
     // If valid, middleware will set a new token cookie and send response
-    // This route handler just forwards to the middleware
+    // Instead, let's generate and set a new token here for clarity
+    const jwt = require('jsonwebtoken');
+    const decoded = jwt.verify(refreshToken, config.jwtRefreshSecret) as { id: string };
+    const user = await User.findById(decoded.id).select('+refreshToken');
+    if (!user || user.refreshToken !== refreshToken) {
+      next(new ErrorResponse('Invalid refresh token', 401));
+      return;
+    }
+    // Generate new auth token
+    const newToken = user.generateAuthToken();
+    // Set new token in cookie
+    res.cookie('token', newToken, {
+      httpOnly: true,
+      secure: config.env === 'production',
+      maxAge: 60 * 60 * 1000, // 1 hour
+      sameSite: 'lax',
+      path: '/',
+    });
     res.status(200).json({
       success: true,
+      token: newToken,
       message: 'Token refreshed successfully',
     });
   } catch (error) {

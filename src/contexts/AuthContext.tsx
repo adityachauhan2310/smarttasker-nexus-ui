@@ -42,13 +42,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const hasToken = apiClient.restoreAuthToken();
-        
+        let hasToken = apiClient.restoreAuthToken();
+        // If no token, try to refresh using the refresh token cookie
+        if (!hasToken) {
+          const newToken = await apiClient.refreshToken();
+          if (newToken) {
+            apiClient.setAuthToken(newToken);
+            hasToken = true;
+          }
+        }
         if (!hasToken) {
           setLoading(false);
           return;
         }
-        
         try {
           const response = await fetchUser();
           if (response.data?.data?.user) {
@@ -65,7 +71,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setLoading(false);
       }
     };
-    
     checkAuth();
   }, []); // Only run on mount
   

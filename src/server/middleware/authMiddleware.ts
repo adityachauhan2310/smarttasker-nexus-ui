@@ -142,6 +142,8 @@ export const refreshToken = async (req: Request, res: Response): Promise<void> =
         httpOnly: true,
         secure: config.env === 'production',
         maxAge: 60 * 60 * 1000, // 1 hour
+        sameSite: 'lax',
+        path: '/',
       });
 
       res.status(200).json({

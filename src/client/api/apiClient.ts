@@ -201,7 +201,7 @@ export class ApiClient {
   /**
    * Refresh auth token
    */
-  private async refreshToken(): Promise<string | null> {
+  public async refreshToken(): Promise<string | null> {
     try {
       const response = await this.instance.post('/auth/refresh-token', {}, {
         withCredentials: true,
