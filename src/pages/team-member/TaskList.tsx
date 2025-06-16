@@ -1,5 +1,4 @@
-
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -12,160 +11,268 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Search, Filter, Calendar, User, Clock, CheckCircle2, Target, UserCheck } from 'lucide-react';
-import TaskCard from '../../components/ui/TaskCard';
+import { Search, Filter, Calendar, User as UserIcon, Clock, CheckCircle2, Target, UserCheck, Plus } from 'lucide-react';
+import TaskCard from '@/components/ui/TaskCard';
+import { useAuth } from '@/hooks/useAuth';
+import { toast } from 'sonner';
+import { Skeleton } from '@/components/ui/skeleton';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import CreateTaskModal from '@/components/modals/CreateTaskModal';
+
+// Task interface
+interface Task {
+  _id: string;
+  title: string;
+  description: string;
+  status: 'pending' | 'in_progress' | 'completed';
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+  assignedTo: {
+    _id: string;
+    name: string;
+    email: string;
+    avatar?: string;
+  } | null;
+  createdBy: {
+    _id: string;
+    name: string;
+    email: string;
+    avatar?: string;
+  };
+  teamId?: {
+    _id: string;
+    name: string;
+  };
+  dueDate?: string;
+  tags: string[];
+  createdAt: string;
+  updatedAt: string;
+  isAssigned?: boolean; // Whether created by the user or assigned by someone else
+}
+
+// Pagination interface
+interface Pagination {
+  total: number;
+  page: number;
+  limit: number;
+  pages: number;
+}
+
+// Define a User interface that matches what's expected from useAuth
+interface User {
+  _id: string;
+  role: string;
+  name: string;
+  email: string;
+}
 
 const TaskList = () => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [priorityFilter, setPriorityFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [priorityFilter, setPriorityFilter] = useState('');
   const [activeTab, setActiveTab] = useState('all');
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [taskToDelete, setTaskToDelete] = useState<string | null>(null);
+  const [pagination, setPagination] = useState<Pagination>({
+    total: 0,
+    page: 1,
+    limit: 20,
+    pages: 0,
+  });
+  const { user } = useAuth();
 
-  // Mock tasks with assignment info
-  const allTasks = [
-    {
-      id: '1',
-      title: 'Update user authentication flow',
-      description: 'Implement new JWT-based authentication system with refresh tokens',
-      status: 'completed' as const,
-      priority: 'high' as const,
-      assigneeId: '1',
-      assigneeName: 'John Doe',
-      assigneeAvatar: '/api/placeholder/32/32',
-      createdBy: '2',
-      createdByName: 'Sarah Johnson',
-      dueDate: '2024-01-15',
-      createdAt: '2024-01-10',
-      updatedAt: '2024-01-14',
-      tags: ['backend', 'security'],
-      comments: [],
-      attachments: [],
-      isAssigned: true, // Assigned by team leader
-    },
-    {
-      id: '2',
-      title: 'Design dashboard mockups',
-      description: 'Create wireframes and high-fidelity mockups for the new admin dashboard',
-      status: 'in_progress' as const,
-      priority: 'medium' as const,
-      assigneeId: '1',
-      assigneeName: 'John Doe',
-      assigneeAvatar: '/api/placeholder/32/32',
-      createdBy: '1',
-      createdByName: 'John Doe',
-      dueDate: '2024-01-18',
-      createdAt: '2024-01-12',
-      updatedAt: '2024-01-15',
-      tags: ['design', 'ui/ux'],
-      comments: [],
-      attachments: [],
-      isAssigned: false, // Self-created
-    },
-    {
-      id: '3',
-      title: 'Write API documentation',
-      description: 'Document all REST endpoints with examples and schema definitions',
-      status: 'todo' as const,
-      priority: 'low' as const,
-      assigneeId: '1',
-      assigneeName: 'John Doe',
-      assigneeAvatar: '/api/placeholder/32/32',
-      createdBy: '3',
-      createdByName: 'Mike Wilson',
-      dueDate: '2024-01-20',
-      createdAt: '2024-01-13',
-      updatedAt: '2024-01-13',
-      tags: ['documentation', 'api'],
-      comments: [],
-      attachments: [],
-      isAssigned: true, // Assigned by team leader
-    },
-    {
-      id: '4',
-      title: 'Implement real-time notifications',
-      description: 'Add WebSocket support for real-time task updates and notifications',
-      status: 'in_review' as const,
-      priority: 'high' as const,
-      assigneeId: '1',
-      assigneeName: 'John Doe',
-      assigneeAvatar: '/api/placeholder/32/32',
-      createdBy: '2',
-      createdByName: 'Sarah Johnson',
-      dueDate: '2024-01-16',
-      createdAt: '2024-01-08',
-      updatedAt: '2024-01-15',
-      tags: ['backend', 'websockets'],
-      comments: [],
-      attachments: [],
-      isAssigned: true, // Assigned by team leader
-    },
-    {
-      id: '5',
-      title: 'Personal learning: React Patterns',
-      description: 'Study advanced React patterns and best practices',
-      status: 'in_progress' as const,
-      priority: 'low' as const,
-      assigneeId: '1',
-      assigneeName: 'John Doe',
-      assigneeAvatar: '/api/placeholder/32/32',
-      createdBy: '1',
-      createdByName: 'John Doe',
-      dueDate: '2024-01-25',
-      createdAt: '2024-01-14',
-      updatedAt: '2024-01-15',
-      tags: ['learning', 'react'],
-      comments: [],
-      attachments: [],
-      isAssigned: false, // Self-created
-    },
-  ];
+  // Function to fetch tasks
+  const fetchTasks = useCallback(async () => {
+    if (!user) return;
 
-  const getFilteredTasks = (taskType: string) => {
-    let tasks = allTasks;
-    
-    // Filter by task type
-    if (taskType === 'assigned') {
-      tasks = tasks.filter(task => task.isAssigned);
-    } else if (taskType === 'personal') {
-      tasks = tasks.filter(task => !task.isAssigned);
-    }
-    
-    // Apply other filters
-    return tasks.filter(task => {
-      const matchesSearch = task.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           task.description.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesStatus = statusFilter === 'all' || task.status === statusFilter;
-      const matchesPriority = priorityFilter === 'all' || task.priority === priorityFilter;
+    try {
+      setLoading(true);
+      // Build query parameters
+      const queryParams = new URLSearchParams();
       
-      return matchesSearch && matchesStatus && matchesPriority;
-    });
+      // Add pagination
+      queryParams.append('page', pagination.page.toString());
+      queryParams.append('limit', pagination.limit.toString());
+      
+      // Add filters if set
+      if (searchTerm) queryParams.append('search', searchTerm);
+      if (statusFilter) queryParams.append('status', statusFilter);
+      if (priorityFilter) queryParams.append('priority', priorityFilter);
+      
+      // For "all" tab, get tasks where user is either creator or assignee
+      if (activeTab === 'all') {
+        queryParams.append('assignedTo', (user as User)._id);
+      } 
+      // For "assigned" tab, get tasks assigned to user but not created by user
+      else if (activeTab === 'assigned') {
+        queryParams.append('assignedTo', (user as User)._id);
+        queryParams.append('excludeCreatedBy', (user as User)._id);
+      } 
+      // For "personal" tab, get tasks created by user
+      else if (activeTab === 'personal') {
+        queryParams.append('createdBy', (user as User)._id);
+      }
+      
+      // Make the API request
+      const response = await fetch(`/api/tasks?${queryParams.toString()}`, {
+        credentials: 'include'
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch tasks');
+      }
+      
+      const data = await response.json();
+      
+      if (!data.success) {
+        throw new Error(data.message || 'Failed to fetch tasks');
+      }
+      
+      // Add isAssigned flag to differentiate between assigned and self-created tasks
+      const tasksWithAssignmentFlag = data.data.map((task: Task) => ({
+        ...task,
+        isAssigned: task.createdBy._id !== (user as User)._id && task.assignedTo?._id === (user as User)._id
+      }));
+      
+      // Update state with fetched data
+      setTasks(tasksWithAssignmentFlag);
+      setPagination({
+        total: data.pagination.total || 0,
+        page: data.pagination.page || 1,
+        limit: data.pagination.limit || 20,
+        pages: data.pagination.pages || 0,
+      });
+    } catch (error) {
+      console.error('Error fetching tasks:', error);
+      toast.error('Failed to load tasks. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  }, [(user as User)?._id, pagination.page, pagination.limit, searchTerm, statusFilter, priorityFilter, activeTab]);
+
+  // Fetch tasks on component mount and when dependencies change
+  useEffect(() => {
+    fetchTasks();
+  }, [fetchTasks]);
+
+  // Handle search input
+  const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchTerm(e.target.value);
+    // Reset to page 1 when search changes
+    setPagination(prev => ({
+      ...prev,
+      page: 1
+    }));
   };
 
-  const getTaskStats = (taskType: string) => {
-    const tasks = taskType === 'all' ? allTasks : 
-                  taskType === 'assigned' ? allTasks.filter(t => t.isAssigned) :
-                  allTasks.filter(t => !t.isAssigned);
-                  
+  // Handle status filter change
+  const handleStatusFilter = (value: string) => {
+    setStatusFilter(value);
+    setPagination(prev => ({
+      ...prev,
+      page: 1
+    }));
+  };
+
+  // Handle priority filter change
+  const handlePriorityFilter = (value: string) => {
+    setPriorityFilter(value);
+    setPagination(prev => ({
+      ...prev,
+      page: 1
+    }));
+  };
+
+  // Handle task status change
+  const handleTaskStatusChange = async (taskId: string, newStatus: string) => {
+    try {
+      const response = await fetch(`/api/tasks/${taskId}/status`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ status: newStatus }),
+        credentials: 'include'
+      });
+      
+      if (!response.ok) throw new Error('Failed to update task status');
+      
+      toast.success(`Task marked as ${newStatus.replace('_', ' ')}`);
+      fetchTasks();
+    } catch (error) {
+      console.error('Error updating task status:', error);
+      toast.error('Failed to update task status');
+    }
+  };
+
+  // Handle delete task
+  const handleDeleteTask = async (taskId: string) => {
+    try {
+      const response = await fetch(`/api/tasks/${taskId}`, {
+        method: 'DELETE',
+        credentials: 'include'
+      });
+      
+      if (!response.ok) throw new Error('Failed to delete task');
+      
+      toast.success('Task deleted successfully');
+      fetchTasks();
+    } catch (error) {
+      console.error('Error deleting task:', error);
+      toast.error('Failed to delete task');
+    } finally {
+      setTaskToDelete(null);
+    }
+  };
+
+  // Handle view task
+  const handleViewTask = (taskId: string) => {
+    // Navigate to task detail page
+    window.location.href = `/tasks/${taskId}`;
+  };
+
+  // Handle edit task
+  const handleEditTask = (taskId: string) => {
+    // Navigate to edit task page or show edit task modal
+    toast.info('Edit task functionality coming soon');
+  };
+
+  // Get task stats for the current view
+  const getTaskStats = () => {
     return {
       all: tasks.length,
-      todo: tasks.filter(t => t.status === 'todo').length,
+      pending: tasks.filter(t => t.status === 'pending').length,
       in_progress: tasks.filter(t => t.status === 'in_progress').length,
-      in_review: tasks.filter(t => t.status === 'in_review').length,
       completed: tasks.filter(t => t.status === 'completed').length,
     };
   };
 
-  const filteredTasks = getFilteredTasks(activeTab);
-  const stats = getTaskStats(activeTab);
+  // Task creation handler
+  const handleTaskCreated = () => {
+    // Refresh tasks after creation
+    fetchTasks();
+  };
+
+  const stats = getTaskStats();
 
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">My Tasks</h1>
-        <p className="text-gray-600 dark:text-gray-400 mt-2">
-          Manage your assigned tasks and personal projects
-        </p>
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">My Tasks</h1>
+          <p className="text-gray-600 dark:text-gray-400 mt-2">
+            Manage your assigned tasks and personal projects
+          </p>
+        </div>
+        <Button 
+          className="bg-gradient-to-r from-blue-600 to-green-600 hover:from-blue-700 hover:to-green-700"
+          onClick={() => setIsCreateModalOpen(true)}
+        >
+          <Plus className="h-4 w-4 mr-2" />
+          Create Task
+        </Button>
       </div>
 
       {/* Task Type Tabs */}
@@ -180,14 +287,14 @@ const TaskList = () => {
             <span>Assigned</span>
           </TabsTrigger>
           <TabsTrigger value="personal" className="flex items-center space-x-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-600 data-[state=active]:to-blue-600 data-[state=active]:text-white">
-            <User className="h-4 w-4" />
+            <UserIcon className="h-4 w-4" />
             <span>Personal</span>
           </TabsTrigger>
         </TabsList>
 
         <TabsContent value={activeTab} className="space-y-6 mt-6">
           {/* Quick Stats */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <Card className="bg-gradient-to-r from-gray-500 to-gray-600 text-white border-0 shadow-lg hover:scale-105 transition-transform">
               <CardContent className="p-4">
                 <div className="text-2xl font-bold">{stats.all}</div>
@@ -196,20 +303,14 @@ const TaskList = () => {
             </Card>
             <Card className="bg-gradient-to-r from-blue-500 to-blue-600 text-white border-0 shadow-lg hover:scale-105 transition-transform">
               <CardContent className="p-4">
-                <div className="text-2xl font-bold">{stats.todo}</div>
-                <div className="text-xs opacity-90">To Do</div>
+                <div className="text-2xl font-bold">{stats.pending}</div>
+                <div className="text-xs opacity-90">Pending</div>
               </CardContent>
             </Card>
             <Card className="bg-gradient-to-r from-yellow-500 to-yellow-600 text-white border-0 shadow-lg hover:scale-105 transition-transform">
               <CardContent className="p-4">
                 <div className="text-2xl font-bold">{stats.in_progress}</div>
                 <div className="text-xs opacity-90">In Progress</div>
-              </CardContent>
-            </Card>
-            <Card className="bg-gradient-to-r from-purple-500 to-purple-600 text-white border-0 shadow-lg hover:scale-105 transition-transform">
-              <CardContent className="p-4">
-                <div className="text-2xl font-bold">{stats.in_review}</div>
-                <div className="text-xs opacity-90">In Review</div>
               </CardContent>
             </Card>
             <Card className="bg-gradient-to-r from-green-500 to-green-600 text-white border-0 shadow-lg hover:scale-105 transition-transform">
@@ -234,7 +335,7 @@ const TaskList = () => {
                 )}
                 {activeTab === 'personal' && (
                   <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400">
-                    <User className="h-3 w-3 mr-1" />
+                    <UserIcon className="h-3 w-3 mr-1" />
                     Self-created
                   </Badge>
                 )}
@@ -248,72 +349,139 @@ const TaskList = () => {
                     <Input
                       placeholder="Search tasks..."
                       value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="pl-10 bg-white dark:bg-gray-700"
+                      onChange={handleSearch}
+                      className="pl-10"
                     />
                   </div>
                 </div>
-                <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="w-full md:w-48 bg-white dark:bg-gray-700">
-                    <SelectValue placeholder="Filter by status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Status</SelectItem>
-                    <SelectItem value="todo">To Do</SelectItem>
-                    <SelectItem value="in_progress">In Progress</SelectItem>
-                    <SelectItem value="in_review">In Review</SelectItem>
-                    <SelectItem value="completed">Completed</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-                  <SelectTrigger className="w-full md:w-48 bg-white dark:bg-gray-700">
-                    <SelectValue placeholder="Filter by priority" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Priority</SelectItem>
-                    <SelectItem value="low">Low</SelectItem>
-                    <SelectItem value="medium">Medium</SelectItem>
-                    <SelectItem value="high">High</SelectItem>
-                    <SelectItem value="urgent">Urgent</SelectItem>
-                  </SelectContent>
-                </Select>
+                
+                <div className="flex space-x-2">
+                  <Select value={statusFilter} onValueChange={handleStatusFilter}>
+                    <SelectTrigger className="w-[130px]">
+                      <SelectValue placeholder="Status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">All Status</SelectItem>
+                      <SelectItem value="pending">Pending</SelectItem>
+                      <SelectItem value="in_progress">In Progress</SelectItem>
+                      <SelectItem value="completed">Completed</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  <Select value={priorityFilter} onValueChange={handlePriorityFilter}>
+                    <SelectTrigger className="w-[130px]">
+                      <SelectValue placeholder="Priority" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">All Priorities</SelectItem>
+                      <SelectItem value="low">Low</SelectItem>
+                      <SelectItem value="medium">Medium</SelectItem>
+                      <SelectItem value="high">High</SelectItem>
+                      <SelectItem value="urgent">Urgent</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </CardContent>
           </Card>
 
-          {/* Tasks Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-            {filteredTasks.map((task, index) => (
-              <div 
-                key={task.id} 
-                className="animate-fade-in" 
-                style={{ animationDelay: `${index * 0.1}s` }}
-              >
-                <TaskCard task={task} showAssignmentBadge={activeTab === 'all'} />
-              </div>
-            ))}
-          </div>
+          {/* Task List */}
+          <div className="space-y-4">
+            {loading ? (
+              // Loading skeletons
+              Array.from({ length: 3 }).map((_, index) => (
+                <Skeleton key={`skeleton-${index}`} className="h-32 w-full" />
+              ))
+            ) : tasks.length === 0 ? (
+              // Empty state
+              <Card className="backdrop-blur-sm bg-white/90 dark:bg-gray-800/90 border-0 shadow-xl">
+                <CardContent className="flex flex-col items-center justify-center py-12">
+                  <p className="text-gray-500 dark:text-gray-400 mb-4">No tasks found</p>
+                  <Button 
+                    variant="outline"
+                    onClick={() => setIsCreateModalOpen(true)}
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Create New Task
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              // Task cards
+              tasks.map(task => (
+                <TaskCard
+                  key={task._id}
+                  task={task}
+                  onStatusChange={handleTaskStatusChange}
+                  onView={handleViewTask}
+                  onEdit={handleEditTask}
+                  onDelete={task.isAssigned ? undefined : () => setTaskToDelete(task._id)}
+                  currentUserId={(user as User)?._id}
+                  userRole={(user as User)?.role}
+                  showTeam={true}
+                  className="backdrop-blur-sm bg-white/90 dark:bg-gray-800/90 border-0 shadow-xl"
+                />
+              ))
+            )}
 
-          {filteredTasks.length === 0 && (
-            <Card className="backdrop-blur-sm bg-white/90 dark:bg-gray-800/90 border-0 shadow-xl">
-              <CardContent className="p-12 text-center">
-                <CheckCircle2 className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-                  No tasks found
-                </h3>
-                <p className="text-gray-500 dark:text-gray-400">
-                  {activeTab === 'assigned' 
-                    ? "You don't have any assigned tasks matching these filters."
-                    : activeTab === 'personal'
-                    ? "You haven't created any personal tasks yet."
-                    : "Try adjusting your filters to see more tasks."
-                  }
-                </p>
-              </CardContent>
-            </Card>
-          )}
+            {/* Pagination */}
+            {pagination.pages > 1 && (
+              <div className="flex justify-center mt-6">
+                <div className="flex space-x-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={pagination.page === 1}
+                    onClick={() => setPagination(prev => ({ ...prev, page: prev.page - 1 }))}
+                  >
+                    Previous
+                  </Button>
+                  <div className="flex items-center px-2">
+                    Page {pagination.page} of {pagination.pages}
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={pagination.page === pagination.pages}
+                    onClick={() => setPagination(prev => ({ ...prev, page: prev.page + 1 }))}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
         </TabsContent>
       </Tabs>
+
+      {/* Create Task Modal */}
+      <CreateTaskModal
+        open={isCreateModalOpen}
+        onOpenChange={setIsCreateModalOpen}
+        onTaskCreated={handleTaskCreated}
+        teamMembers={[]}
+      />
+
+      {/* Delete confirmation dialog */}
+      <AlertDialog open={!!taskToDelete} onOpenChange={(isOpen) => !isOpen && setTaskToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete the task and remove it from the system.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={() => taskToDelete && handleDeleteTask(taskToDelete)}
+              className="bg-red-500 hover:bg-red-600 text-white"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

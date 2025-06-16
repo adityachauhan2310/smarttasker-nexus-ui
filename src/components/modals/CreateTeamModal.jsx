@@ -22,70 +22,41 @@ import {
   Users, 
   UserCheck, 
   Search,
-  AlertCircle
+  AlertCircle,
+  Check,
 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Label } from '@/components/ui/label';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 
 // Form schema validation
 const formSchema = z.object({
-  name: z.string().min(3, { message: 'Team name must be at least 3 characters' }).max(50, { message: 'Team name cannot exceed 50 characters' }),
+  name: z.string().min(3, { message: 'Team name must be at least 3 characters' }),
   description: z.string().optional(),
-  leaderId: z.string({ required_error: 'A team leader is required' }).min(1, { message: 'Team leader is required' }),
-  memberIds: z.array(z.string()).optional(),
+  leaders: z.array(z.string()).min(1, { message: 'At least one team leader is required' }),
+  members: z.array(z.string()).default([]),
 });
 
 const CreateTeamModal = ({ isOpen, onClose }) => {
   const [activeTab, setActiveTab] = useState('info');
+  const [leaderSearch, setLeaderSearch] = useState('');
   const [memberSearch, setMemberSearch] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [leaderSearch, setLeaderSearch] = useState('');
+  const [selectedLeaders, setSelectedLeaders] = useState([]);
   const [selectedMembers, setSelectedMembers] = useState([]);
+  const [submissionError, setSubmissionError] = useState(null);
   
   // Create team mutation hook
   const createTeamMutation = useCreateTeam();
   
-  // Fetch users for leader and member selection
-  const { data: usersData, isLoading: isLoadingUsers, refetch: refetchUsers } = useUsers({
+  // Fetch users for selection
+  const { data: usersData, isLoading: isLoadingUsers } = useUsers({
     limit: 100
   });
 
   const users = usersData?.data || [];
-  
-  // Reset form and selections when modal opens/closes
-  useEffect(() => {
-    if (isOpen) {
-      refetchUsers();
-      setActiveTab('info');
-      setMemberSearch('');
-      setLeaderSearch('');
-      setSelectedMembers([]);
-      form.reset({
-        name: '',
-        description: '',
-        leaderId: '',
-        memberIds: [],
-      });
-    }
-  }, [isOpen]);
-  
-  // Filter users for leaders and members
-  const possibleLeaders = users.filter(user => 
-    (user.role === 'admin' || user.role === 'team_leader') && 
-    (leaderSearch === '' || user.name.toLowerCase().includes(leaderSearch.toLowerCase()))
-  );
-  
-  // Only show users with role 'team_member' for member selection
-  const possibleMembers = users.filter(user => 
-    user.role === 'team_member' && 
-    (memberSearch === '' || user.name.toLowerCase().includes(memberSearch.toLowerCase()))
-  );
   
   // Setup form with validation
   const form = useForm({
@@ -93,43 +64,122 @@ const CreateTeamModal = ({ isOpen, onClose }) => {
     defaultValues: {
       name: '',
       description: '',
-      leaderId: '',
-      memberIds: [],
+      leaders: [],
+      members: [],
     },
   });
 
-  const handleSubmit = form.handleSubmit((data) => {
-    setIsSubmitting(true);
+  // Reset form when modal opens/closes
+  useEffect(() => {
+    if (isOpen) {
+      setActiveTab('info');
+      setLeaderSearch('');
+      setMemberSearch('');
+      setSelectedLeaders([]);
+      setSelectedMembers([]);
+      setSubmissionError(null);
+      form.reset({
+        name: '',
+        description: '',
+        leaders: [],
+        members: [],
+      });
+    }
+  }, [isOpen, form]);
+
+  // Update form values when selections change
+  useEffect(() => {
+    form.setValue('leaders', selectedLeaders, { shouldValidate: true });
+  }, [selectedLeaders, form]);
+
+  useEffect(() => {
+    form.setValue('members', selectedMembers, { shouldValidate: true });
+  }, [selectedMembers, form]);
+
+  // Filter users based on role and search queries
+  const leaderCandidates = users.filter(user => 
+    (user.role === 'admin' || user.role === 'team_leader') &&
+    (leaderSearch === '' || 
+     user.name?.toLowerCase().includes(leaderSearch.toLowerCase()) ||
+     user.email?.toLowerCase().includes(leaderSearch.toLowerCase()))
+  );
+
+  const memberCandidates = users.filter(user => 
+    user.role === 'team_member' &&
+    (memberSearch === '' || 
+     user.name?.toLowerCase().includes(memberSearch.toLowerCase()) ||
+     user.email?.toLowerCase().includes(memberSearch.toLowerCase()))
+  );
+
+  // Toggle leader selection - only select one at a time
+  const toggleLeaderSelection = (userId) => {
+    // If already selected, remove it
+    if (selectedLeaders.includes(userId)) {
+      setSelectedLeaders(prev => prev.filter(id => id !== userId));
+    } else {
+      // Otherwise add it
+      setSelectedLeaders([userId]); // Only allow one leader selection at a time
+    }
+  };
+
+  const toggleMemberSelection = (userId) => {
+    setSelectedMembers(prev => {
+      if (prev.includes(userId)) {
+        return prev.filter(id => id !== userId);
+      } else {
+        return [...prev, userId];
+      }
+    });
+  };
+
+  // Form submission handler
+  const onSubmit = (data) => {
+    console.log("Submitting form with data:", data);
     
+    if (!data.leaders || data.leaders.length === 0) {
+      toast.error('Please select at least one team leader');
+      return;
+    }
+
+    if (!data.name) {
+      toast.error('Team name is required');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setSubmissionError(null);
+    
+    // Adapt to API structure
+    const leader = data.leaders[0]; 
     const teamData = {
       name: data.name,
       description: data.description || '',
-      leader: data.leaderId,
-      members: selectedMembers,
+      leader: leader,
+      members: data.members || [],
     };
     
     console.log('Creating team with data:', teamData);
     
     createTeamMutation.mutate(teamData, {
       onSuccess: () => {
+        console.log("Team created successfully");
         toast.success('Team created successfully');
         setIsSubmitting(false);
         onClose();
       },
       onError: (error) => {
-        console.error('Team creation failed:', error);
+        console.error("Team creation error:", error);
+        setSubmissionError(error.message || 'Failed to create team');
         toast.error('Failed to create team: ' + (error.message || 'Unknown error'));
         setIsSubmitting(false);
       },
     });
-  });
+  };
 
-  const toggleMember = (memberId) => {
-    setSelectedMembers(prev => 
-      prev.includes(memberId)
-        ? prev.filter(id => id !== memberId)
-        : [...prev, memberId]
-    );
+  // Helper to get user name by ID
+  const getUserName = (userId) => {
+    const user = users.find(u => u.id === userId);
+    return user ? user.name : 'Unknown User';
   };
 
   return (
@@ -138,25 +188,25 @@ const CreateTeamModal = ({ isOpen, onClose }) => {
         <DialogHeader>
           <DialogTitle>Create Team</DialogTitle>
           <DialogDescription>
-            Create a new team for collaboration
+            Create a new team with a leader and members
           </DialogDescription>
         </DialogHeader>
         
         <Form {...form}>
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             <Tabs value={activeTab} onValueChange={setActiveTab}>
               <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="info">
                   <Building className="h-4 w-4 mr-2" />
                   Team Info
                 </TabsTrigger>
-                <TabsTrigger value="leader">
+                <TabsTrigger value="leaders">
                   <UserCheck className="h-4 w-4 mr-2" />
-                  Team Leader
+                  Leaders ({selectedLeaders.length})
                 </TabsTrigger>
                 <TabsTrigger value="members">
                   <Users className="h-4 w-4 mr-2" />
-                  Members
+                  Members ({selectedMembers.length})
                 </TabsTrigger>
               </TabsList>
               
@@ -199,140 +249,188 @@ const CreateTeamModal = ({ isOpen, onClose }) => {
                   />
                 </TabsContent>
                 
-                <TabsContent value="leader" className="space-y-4">
-                  <FormField
-                    control={form.control}
-                    name="leaderId"
-                    render={({ field }) => (
-                      <FormItem className="space-y-4">
-                        <FormLabel>Team Leader*</FormLabel>
-                        <div className="relative mb-2">
-                          <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-500" />
-                          <Input
-                            placeholder="Search users..."
-                            className="pl-8"
-                            value={leaderSearch}
-                            onChange={(e) => setLeaderSearch(e.target.value)}
-                          />
-                        </div>
-                        
-                        {isLoadingUsers ? (
-                          <div className="flex items-center justify-center py-4">
-                            <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                          </div>
-                        ) : possibleLeaders.length > 0 ? (
-                          <div className="space-y-2">
-                            {possibleLeaders.map(user => (
-                              <div key={user.id} className={`flex items-center space-x-2 border p-3 rounded-md cursor-pointer ${field.value === user.id ? 'ring-2 ring-blue-500' : ''}`}
-                                onClick={() => {
-                                  if (field.value === user.id) {
-                                    field.onChange('');
-                                  } else {
-                                    field.onChange(user.id);
-                                  }
-                                }}
-                              >
-                                <Checkbox
-                                  id={`leader-${user.id}`}
-                                  checked={field.value === user.id}
-                                  onCheckedChange={(checked) => {
-                                    if (checked) {
-                                      field.onChange(user.id);
-                                    } else {
-                                      field.onChange('');
-                                    }
-                                  }}
-                                />
-                                <div className="flex items-center flex-1 space-x-3">
-                                  <Avatar>
-                                    <AvatarImage src={user.avatar} />
-                                    <AvatarFallback className="bg-gradient-to-r from-blue-600 to-green-600 text-white">
-                                      {user.name?.[0]}
-                                    </AvatarFallback>
-                                  </Avatar>
-                                  <div className="flex-1">
-                                    <span className="text-sm font-medium">{user.name}</span>
-                                    <div className="text-xs text-gray-500">{user.email}</div>
-                                  </div>
-                                  <Badge variant={user.role === 'admin' ? 'default' : 'secondary'}>
-                                    {user.role === 'team_leader' ? 'Team Leader' : 'Admin'}
-                                  </Badge>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="text-center py-4">
-                            <AlertCircle className="mx-auto h-8 w-8 text-gray-400 mb-2" />
-                            <p className="text-sm text-gray-500">No eligible team leaders found</p>
-                          </div>
-                        )}
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </TabsContent>
-                
-                <TabsContent value="members" className="space-y-4">
+                <TabsContent value="leaders" className="space-y-4">
+                  <div className="flex justify-between items-center">
+                    <h3 className="text-sm font-medium">Team Leader</h3>
+                    <FormMessage>{form.formState.errors.leaders?.message}</FormMessage>
+                  </div>
+                  
+                  <div className="relative mb-4">
+                    <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-500" />
+                    <Input
+                      placeholder="Search leaders by name or email..."
+                      className="pl-8"
+                      value={leaderSearch}
+                      onChange={(e) => setLeaderSearch(e.target.value)}
+                    />
+                  </div>
+                  
                   <div className="space-y-4">
-                    <div className="flex justify-between items-center">
-                      <Label>Team Members</Label>
-                      {selectedMembers.length > 0 && (
-                        <Badge variant="outline">
-                          {selectedMembers.length} selected
-                        </Badge>
-                      )}
-                    </div>
-                    
-                    <div className="relative mb-2">
-                      <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-500" />
-                      <Input
-                        placeholder="Search team members..."
-                        className="pl-8"
-                        value={memberSearch}
-                        onChange={(e) => setMemberSearch(e.target.value)}
-                      />
-                    </div>
-                    
                     {isLoadingUsers ? (
-                      <div className="flex items-center justify-center py-4">
-                        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                      <div className="flex justify-center py-8">
+                        <Loader2 className="h-8 w-8 animate-spin" />
                       </div>
-                    ) : possibleMembers.length > 0 ? (
+                    ) : leaderCandidates.length > 0 ? (
                       <div className="space-y-2">
-                        {possibleMembers.map(member => (
-                          <div key={member.id} className="flex items-center space-x-2 border p-3 rounded-md">
-                            <Checkbox
-                              id={`member-${member.id}`}
-                              checked={selectedMembers.includes(member.id)}
-                              onCheckedChange={() => toggleMember(member.id)}
-                            />
-                            <div className="flex items-center flex-1 space-x-3">
+                        {leaderCandidates.map(user => (
+                          <div 
+                            key={user.id}
+                            onClick={() => toggleLeaderSelection(user.id)}
+                            className={`
+                              flex items-center p-3 border rounded-lg cursor-pointer
+                              ${selectedLeaders.includes(user.id) 
+                                ? 'bg-blue-50 border-blue-500 dark:bg-blue-900/20' 
+                                : 'hover:bg-gray-50 dark:hover:bg-gray-800'}
+                            `}
+                          >
+                            <div className="flex items-center space-x-3 flex-1">
                               <Avatar>
-                                <AvatarImage src={member.avatar} />
-                                <AvatarFallback className="bg-gradient-to-r from-blue-600 to-green-600 text-white">
-                                  {member.name?.[0]}
+                                <AvatarFallback className="bg-blue-600">
+                                  {user.name?.[0] || '?'}
                                 </AvatarFallback>
                               </Avatar>
-                              <div className="flex-1">
-                                <span className="text-sm font-medium">{member.name}</span>
-                                <div className="text-xs text-gray-500">{member.email}</div>
+                              <div>
+                                <p className="font-medium">{user.name}</p>
+                                <p className="text-xs text-gray-500">{user.email}</p>
                               </div>
-                              <Badge variant="outline">Team Member</Badge>
+                            </div>
+                            
+                            <div className="flex items-center space-x-2">
+                              <Badge variant={user.role === 'admin' ? 'destructive' : 'secondary'}>
+                                {user.role === 'admin' ? 'Admin' : 'Team Leader'}
+                              </Badge>
+                              
+                              {selectedLeaders.includes(user.id) && (
+                                <Check className="h-5 w-5 text-blue-500" />
+                              )}
                             </div>
                           </div>
                         ))}
                       </div>
                     ) : (
-                      <div className="text-center py-4">
+                      <div className="text-center py-8 border rounded-md">
                         <AlertCircle className="mx-auto h-8 w-8 text-gray-400 mb-2" />
-                        <p className="text-sm text-gray-500">No team members found</p>
+                        <p className="text-gray-500">No leaders found</p>
                       </div>
                     )}
+                    
+                    {selectedLeaders.length > 0 && (
+                      <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-md">
+                        <p className="text-sm font-medium mb-1">Selected Leader:</p>
+                        <div className="flex flex-wrap gap-2">
+                          {selectedLeaders.map((leaderId) => (
+                            <Badge 
+                              key={leaderId}
+                              variant="default"
+                              className="flex items-center gap-1"
+                            >
+                              {getUserName(leaderId)} (Primary)
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    
+                    <FormDescription className="mt-2">
+                      Select the team leader.
+                    </FormDescription>
+                  </div>
+                </TabsContent>
+                
+                <TabsContent value="members" className="space-y-4">
+                  <div className="flex justify-between items-center">
+                    <h3 className="text-sm font-medium">Team Members</h3>
+                  </div>
+                  
+                  <div className="relative mb-4">
+                    <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-500" />
+                    <Input
+                      placeholder="Search members by name or email..."
+                      className="pl-8"
+                      value={memberSearch}
+                      onChange={(e) => setMemberSearch(e.target.value)}
+                    />
+                  </div>
+                  
+                  <div className="space-y-4">
+                    {isLoadingUsers ? (
+                      <div className="flex justify-center py-8">
+                        <Loader2 className="h-8 w-8 animate-spin" />
+                      </div>
+                    ) : memberCandidates.length > 0 ? (
+                      <div className="space-y-2">
+                        {memberCandidates.map(user => (
+                          <div 
+                            key={user.id}
+                            onClick={() => toggleMemberSelection(user.id)}
+                            className={`
+                              flex items-center p-3 border rounded-lg cursor-pointer
+                              ${selectedMembers.includes(user.id) 
+                                ? 'bg-green-50 border-green-500 dark:bg-green-900/20' 
+                                : 'hover:bg-gray-50 dark:hover:bg-gray-800'}
+                            `}
+                          >
+                            <div className="flex items-center space-x-3 flex-1">
+                              <Avatar>
+                                <AvatarFallback className="bg-green-600">
+                                  {user.name?.[0] || '?'}
+                                </AvatarFallback>
+                              </Avatar>
+                              <div>
+                                <p className="font-medium">{user.name}</p>
+                                <p className="text-xs text-gray-500">{user.email}</p>
+                              </div>
+                            </div>
+                            
+                            <div className="flex items-center space-x-2">
+                              <Badge variant="outline">
+                                Team Member
+                              </Badge>
+                              
+                              {selectedMembers.includes(user.id) && (
+                                <Check className="h-5 w-5 text-green-500" />
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-8 border rounded-md">
+                        <AlertCircle className="mx-auto h-8 w-8 text-gray-400 mb-2" />
+                        <p className="text-gray-500">No members found</p>
+                      </div>
+                    )}
+                    
+                    {selectedMembers.length > 0 && (
+                      <div className="bg-green-50 dark:bg-green-900/20 p-3 rounded-md">
+                        <p className="text-sm font-medium mb-1">Selected Members:</p>
+                        <div className="flex flex-wrap gap-2">
+                          {selectedMembers.map(memberId => (
+                            <Badge 
+                              key={memberId}
+                              variant="outline"
+                              className="flex items-center gap-1"
+                            >
+                              {getUserName(memberId)}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    
+                    <FormDescription className="mt-2">
+                      Select team members. You can add more later.
+                    </FormDescription>
                   </div>
                 </TabsContent>
               </ScrollArea>
             </Tabs>
+            
+            {submissionError && (
+              <div className="bg-red-50 text-red-700 p-3 rounded-md mt-4">
+                <p className="text-sm font-medium">Error: {submissionError}</p>
+              </div>
+            )}
             
             <DialogFooter>
               <Button 
@@ -365,4 +463,4 @@ const CreateTeamModal = ({ isOpen, onClose }) => {
   );
 };
 
-export default CreateTeamModal;
+export default CreateTeamModal; 

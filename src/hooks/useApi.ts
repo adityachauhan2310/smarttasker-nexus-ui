@@ -18,7 +18,9 @@ import {
   PaginationMeta
 } from '../types/api';
 import { User } from '../types/auth';
+import { Task } from '../types/task';
 import axios from 'axios';
+import { useState, useEffect } from 'react';
 
 // ==== Auth Hooks ====
 export const useLogin = (options: any = {}) => {
@@ -121,13 +123,35 @@ export const useCurrentUser = (options?: UseQueryOptions<ApiResponse<UserRespons
 };
 
 // ==== Tasks Hooks ====
-export const useTasks = (params?: { page?: number; limit?: number; status?: string; assignee?: string }, options?: UseQueryOptions<PaginatedApiResponse<TasksResponse>, Error>) => {
+export const useTasks = (params?: { 
+  page?: number; 
+  limit?: number; 
+  status?: string; 
+  assignee?: string;
+  startDate?: string;
+  endDate?: string;
+  priority?: string;
+  userId?: string;
+}, options?: UseQueryOptions<PaginatedApiResponse<TasksResponse>, Error>) => {
   return useQuery({
     queryKey: ['tasks', params],
     queryFn: async () => {
-      const response = await apiClient.get<PaginatedApiResponse<TasksResponse>>('/tasks', { params });
+      // Prepare query parameters
+      const queryParams: Record<string, any> = { ...params };
+      
+      // Map special parameters to their API equivalents
+      if (params?.startDate) queryParams.dueDateStart = params.startDate;
+      if (params?.endDate) queryParams.dueDateEnd = params.endDate;
+      if (params?.userId) queryParams.assignedTo = params.userId;
+      
+      // Remove the original params that were mapped
+      delete queryParams.startDate;
+      delete queryParams.endDate;
+      
+      const response = await apiClient.get<PaginatedApiResponse<TasksResponse>>('/tasks', { params: queryParams });
       return response.data;
     },
+    staleTime: 1000 * 60 * 5, // 5 minutes
     ...options,
   });
 };
@@ -357,8 +381,15 @@ export const useDeleteUser = (options?: UseMutationOptions<ApiResponse<null>, Er
   
   return useMutation({
     mutationFn: async (userId: string) => {
-      const response = await apiClient.delete<ApiResponse<null>>(`/users/${userId}`);
-      return response.data;
+      console.log(`Deleting user with ID: ${userId}`);
+      try {
+        const response = await apiClient.delete<ApiResponse<null>>(`/users/${userId}`);
+        console.log('Delete user response:', response.data);
+        return response.data;
+      } catch (error) {
+        console.error('Error in delete user API call:', error);
+        throw error;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
@@ -369,48 +400,10 @@ export const useDeleteUser = (options?: UseMutationOptions<ApiResponse<null>, Er
       });
     },
     onError: (error: any) => {
+      console.error('Delete user error:', error);
       toast({
         title: "Error",
         description: error.message || "Failed to delete user",
-        variant: "destructive",
-      });
-    },
-    ...options,
-  });
-};
-
-export const useToggleUserStatus = (options?: UseMutationOptions<ApiResponse<UserResponse>, Error, any>) => {
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
-  
-  return useMutation({
-    mutationFn: async ({ 
-      userId, 
-      isActive 
-    }: { 
-      userId: string; 
-      isActive: boolean 
-    }) => {
-      const response = await apiClient.put<ApiResponse<UserResponse>>(
-        `/users/${userId}`, 
-        { isActive }
-      );
-      return response.data;
-    },
-    onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['users'] });
-      queryClient.invalidateQueries({ queryKey: ['users', variables.userId] });
-      const status = variables.isActive ? 'activated' : 'deactivated';
-      toast({
-        title: "Success",
-        description: `User ${status} successfully`,
-        variant: "default",
-      });
-    },
-    onError: (error: any) => {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to update user status",
         variant: "destructive",
       });
     },
@@ -423,8 +416,18 @@ export const useResetUserPassword = (options?: UseMutationOptions<ApiResponse<an
   const { toast } = useToast();
   return useMutation({
     mutationFn: async ({ userId, password }) => {
-      const response = await apiClient.put<ApiResponse<any>>(`/users/${userId}/reset-password`, { password });
-      return response.data;
+      try {
+        console.log(`Resetting password for user ID: ${userId}`);
+        const response = await apiClient.put<ApiResponse<any>>(
+          `/users/${userId}/reset-password`, 
+          { password }
+        );
+        console.log('Reset password response:', response.data);
+        return response.data;
+      } catch (error) {
+        console.error('Error in reset password API call:', error);
+        throw error;
+      }
     },
     onSuccess: () => {
       toast({
@@ -435,6 +438,7 @@ export const useResetUserPassword = (options?: UseMutationOptions<ApiResponse<an
       queryClient.invalidateQueries({ queryKey: ['users'] });
     },
     onError: (error: any) => {
+      console.error('Password reset error details:', error);
       toast({
         title: 'Error',
         description: error.message || 'Failed to reset password',
@@ -585,8 +589,6 @@ export interface CalendarEventData {
   priority?: 'high' | 'medium' | 'low';
   impact?: 'high' | 'medium' | 'low';
   attendees?: string[];
-  assigneeId?: string;
-  assignedById?: string;
   status?: 'confirmed' | 'tentative' | 'cancelled';
   createdAt?: string;
   updatedAt?: string;
@@ -636,6 +638,8 @@ export const useCreateCalendarEvent = (options?: UseMutationOptions<ApiResponse<
   
   return useMutation({
     mutationFn: async (eventData: Omit<CalendarEventData, 'id' | 'createdAt' | 'updatedAt'>) => {
+      // Log the data being sent to help with debugging
+      console.log('Creating calendar event with data:', eventData);
       const response = await apiClient.post<ApiResponse<CalendarEventResponse>>('/calendar-events', eventData);
       return response.data;
     },
@@ -648,9 +652,10 @@ export const useCreateCalendarEvent = (options?: UseMutationOptions<ApiResponse<
       });
     },
     onError: (error: any) => {
+      console.error('Calendar event creation error:', error.response?.data || error);
       toast({
         title: "Error",
-        description: error.message || "Failed to create event",
+        description: error.response?.data?.message || error.message || "Failed to create event",
         variant: "destructive",
       });
     },
@@ -750,31 +755,9 @@ export const useAnalytics = (params?: { timeframe?: string; teamId?: string }, o
   return useQuery({
     queryKey: ['analytics', params],
     queryFn: async () => {
-      try {
-        const response = await apiClient.get<ApiResponse<AnalyticsResponse>>('/analytics', { params });
-        return response.data;
-      } catch (error) {
-        console.error('Analytics API error:', error);
-        // Return mock data on error
-        return {
-          success: true,
-          data: {
-            data: {
-              taskCompletionRate: 0.75,
-              tasksCompleted: 12,
-              tasksCreated: 16,
-              activeUsers: 8,
-              timeframeStart: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
-              timeframeEnd: new Date().toISOString(),
-              tasksPending: 4,
-              tasksOverdue: 2,
-              userGrowthRate: 0.1,
-              newTeamsThisWeek: 1,
-              recentActivities: []
-            }
-          }
-        };
-      }
+      // Fetch from system analytics endpoint
+      const response = await apiClient.get<ApiResponse<AnalyticsResponse>>('/analytics/system', { params });
+      return response.data;
     },
     ...options,
   });
@@ -822,4 +805,187 @@ export const useMarkAllNotificationsRead = (options?: UseMutationOptions<ApiResp
     },
     ...options,
   });
+};
+
+// Task Data
+export interface TaskData {
+  _id: string;
+  title: string;
+  description: string;
+  status: 'pending' | 'in_progress' | 'completed';
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+  dueDate?: string;
+  assignedTo?: {
+    _id: string;
+    name: string;
+    email: string;
+  } | null;
+  createdBy: {
+    _id: string;
+    name: string;
+    email: string;
+  };
+  tags: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Analytics Data
+export interface MetricData {
+  name: string;
+  value: number | string;
+  unit?: string;
+  metadata?: any;
+}
+
+export interface AnalyticsData {
+  metrics?: MetricData[];
+  timeSeries?: Array<{
+    name: string;
+    points: Array<{x: string, y: number}>;
+    interval: string;
+  }>;
+  activeUsers?: number;
+  totalUsers?: number;
+  tasksCreated?: number;
+  tasksCompleted?: number;
+  taskCompletionRate?: number;
+  teamsCount?: number;
+  eventsCount?: number;
+  upcomingDeadlines?: number;
+}
+
+// Base API request function
+async function apiRequest<T>(
+  endpoint: string,
+  method: string = 'GET',
+  data?: any
+): Promise<ApiResponse<T>> {
+  const options: RequestInit = {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    credentials: 'include',
+  };
+
+  if (data) {
+    options.body = JSON.stringify(data);
+  }
+
+  const response = await fetch(`/api${endpoint}`, options);
+  const json = await response.json();
+
+  if (!response.ok) {
+    throw new Error(json.message || 'API request failed');
+  }
+
+  return json;
+}
+
+// Convert tasks to calendar events format
+export function useTasksAsEvents(params: {
+  startDate?: string;
+  endDate?: string;
+  status?: string;
+  userId?: string;
+}) {
+  const { data, isLoading, isError, refetch } = useTasks(params);
+  const [events, setEvents] = useState<CalendarEventData[]>([]);
+  
+  useEffect(() => {
+    if (data?.data) {
+      // Get tasks from the response, handling different possible formats
+      let tasks: Task[] = [];
+      
+      if (Array.isArray(data.data)) {
+        // Safely convert from TasksResponse to Task[]
+        tasks = (data.data as unknown as { tasks: Task[] }[]).flatMap(item => item.tasks || []);
+      } else if (typeof data.data === 'object' && data.data !== null) {
+        // Try to access tasks property if it exists
+        const tasksObject = data.data as unknown as { tasks?: Task[] };
+        if (tasksObject.tasks && Array.isArray(tasksObject.tasks)) {
+          tasks = tasksObject.tasks;
+        }
+      }
+      
+      // Convert tasks with due dates to calendar events
+      const taskEvents = tasks
+        .filter(task => task.dueDate) // Only include tasks with due dates
+        .map(task => ({
+          id: task.id,
+          title: task.title,
+          date: task.dueDate as string,
+          type: 'task' as const,
+          description: task.description,
+          priority: mapTaskPriorityToEventPriority(task.priority),
+          assignee: task.assigneeName,
+          assignedBy: task.createdByName,
+          status: mapTaskStatusToEventStatus(task.status),
+          // Add a special flag to identify this as a task in the calendar
+          isTask: true,
+        }));
+      
+      setEvents(taskEvents);
+    }
+  }, [data]);
+  
+  // Extract tasks safely for the return value
+  let originalTasks: Task[] = [];
+  if (data?.data) {
+    if (Array.isArray(data.data)) {
+      // Safely convert from TasksResponse to Task[]
+      originalTasks = (data.data as unknown as { tasks: Task[] }[]).flatMap(item => item.tasks || []);
+    } else if (typeof data.data === 'object' && data.data !== null) {
+      const tasksObject = data.data as unknown as { tasks?: Task[] };
+      if (tasksObject.tasks && Array.isArray(tasksObject.tasks)) {
+        originalTasks = tasksObject.tasks;
+      }
+    }
+  }
+  
+  return { 
+    events, 
+    isLoading, 
+    isError, 
+    refetch,
+    originalTasks
+  };
+}
+
+// Helper function to map task priority to event priority
+function mapTaskPriorityToEventPriority(priority: string): 'high' | 'medium' | 'low' {
+  switch (priority) {
+    case 'urgent':
+    case 'high':
+      return 'high';
+    case 'medium':
+      return 'medium';
+    default:
+      return 'low';
+  }
+}
+
+// Helper function to map task status to event status
+function mapTaskStatusToEventStatus(status: string): 'confirmed' | 'tentative' | 'cancelled' {
+  switch (status) {
+    case 'completed':
+      return 'confirmed';
+    case 'in_progress':
+    case 'in_review':
+      return 'confirmed';
+    case 'todo':
+    default:
+      return 'tentative';
+  }
+}
+
+export default {
+  useCalendarEvents,
+  useCreateCalendarEvent,
+  useUpdateCalendarEvent,
+  useDeleteCalendarEvent,
+  useAnalytics,
+  useTasks,
+  useTasksAsEvents,
 }; 

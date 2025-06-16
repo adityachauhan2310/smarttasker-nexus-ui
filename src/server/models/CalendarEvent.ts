@@ -13,6 +13,7 @@ export interface ICalendarEvent extends Document {
   assigneeId?: mongoose.Types.ObjectId;
   assignedById?: mongoose.Types.ObjectId;
   teamId?: mongoose.Types.ObjectId;
+  taskId?: mongoose.Types.ObjectId;
   status?: 'confirmed' | 'tentative' | 'cancelled';
   createdAt: Date;
   updatedAt: Date;
@@ -93,6 +94,10 @@ const CalendarEventSchema: Schema = new Schema(
     teamId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Team'
+    },
+    taskId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Task'
     },
     status: {
       type: String,

@@ -206,6 +206,16 @@ export const updateUser = async (req: Request, res: Response, next: NextFunction
         return;
       }
     }
+
+    // Prevent deactivating yourself
+    if (
+      req.user &&
+      userId === req.user._id.toString() &&
+      req.body.isActive === false
+    ) {
+      next(new ErrorResponse('Cannot deactivate your own account', 400));
+      return;
+    }
     
     // Update user
     const fieldsToUpdate: any = {};
@@ -214,7 +224,13 @@ export const updateUser = async (req: Request, res: Response, next: NextFunction
     if (req.body.email) fieldsToUpdate.email = req.body.email;
     if (req.body.role) fieldsToUpdate.role = req.body.role;
     if (req.body.avatar) fieldsToUpdate.avatar = req.body.avatar;
-    if (typeof req.body.isActive !== 'undefined') fieldsToUpdate.isActive = req.body.isActive;
+    if (typeof req.body.isActive !== 'undefined') {
+      fieldsToUpdate.isActive = req.body.isActive;
+      // If deactivating, invalidate any refresh tokens
+      if (!req.body.isActive) {
+        fieldsToUpdate.refreshToken = undefined;
+      }
+    }
     
     const updatedUser = await User.findByIdAndUpdate(
       userId,
@@ -259,14 +275,38 @@ export const deleteUser = async (req: Request, res: Response, next: NextFunction
       next(new ErrorResponse('Cannot delete your own account', 400));
       return;
     }
-    
-    await user.deleteOne();
-    
-    res.status(200).json({
-      success: true,
-      data: {},
-    });
+
+    try {
+      // The following operations should ideally be in a transaction if they were active.
+      // Since they are commented out, we can proceed without a transaction for now
+      // to fix the immediate issue.
+
+      // Delete user's tasks (references)
+      // await Task.updateMany({ assignedTo: userId }, { assignedTo: null });
+
+      // Delete user's team associations
+      // await Team.updateMany({ members: userId }, { $pull: { members: userId } });
+
+      // Delete user's notifications
+      // await Notification.deleteMany({ userId });
+
+      // Finally delete the user
+      await user.deleteOne();
+
+      // Log the deletion
+      console.log(`User ${user.email} deleted by admin ${req.user?.email}`);
+      
+      res.status(200).json({
+        success: true,
+        message: 'User deleted successfully',
+        data: {},
+      });
+    } catch (error) {
+      console.error('Error during user deletion:', error);
+      next(new ErrorResponse('Failed to delete user', 500));
+    }
   } catch (error) {
+    console.error('Error in deleteUser controller:', error);
     next(error);
   }
 };
@@ -287,24 +327,27 @@ export const resetPassword = async (req: Request, res: Response, next: NextFunct
     }
     
     // Validate request
-    await body('password')
-      .notEmpty()
-      .withMessage('Password is required')
-      .isLength({ min: 6 })
-      .withMessage('Password must be at least 6 characters')
-      .run(req);
+    await Promise.all([
+      body('password')
+        .notEmpty()
+        .withMessage('Password is required')
+        .isLength({ min: 6 })
+        .withMessage('Password must be at least 6 characters')
+        .run(req),
+    ]);
     
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       res.status(400).json({
         success: false,
         errors: errors.array(),
+        message: 'Validation failed',
       });
       return;
     }
     
     // Check if user exists
-    const user = await User.findById(userId);
+    const user = await User.findById(userId).select('+password');
     
     if (!user) {
       next(new ErrorResponse('User not found', 404));
@@ -313,13 +356,27 @@ export const resetPassword = async (req: Request, res: Response, next: NextFunct
     
     // Update password
     user.password = req.body.password;
-    await user.save();
     
-    res.status(200).json({
-      success: true,
-      message: 'Password reset successful',
-    });
+    try {
+      await user.save();
+      
+      // Log the password change
+      console.log(`Password reset for user ${user.email} by admin ${req.user?.email}`);
+      
+      // Invalidate any existing refresh tokens
+      user.refreshToken = undefined;
+      await user.save();
+      
+      res.status(200).json({
+        success: true,
+        message: 'Password reset successfully',
+      });
+    } catch (error) {
+      console.error('Error saving user password:', error);
+      next(new ErrorResponse('Failed to reset password', 500));
+    }
   } catch (error) {
+    console.error('Error in resetPassword controller:', error);
     next(error);
   }
 };

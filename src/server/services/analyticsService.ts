@@ -566,18 +566,76 @@ class AnalyticsService {
   // System analytics methods
   
   private async calculateActiveUsers(options: AnalyticsOptions): Promise<number> {
-    // Implementation would count active users in the given period
-    return 42; // Example: 42 active users
+    try {
+      // Count users with status 'active'
+      const activeUsersCount = await User.countDocuments({ 
+        status: 'active',
+        // Filter by date if needed
+        ...(options.startDate && options.endDate ? {
+          lastLoginAt: {
+            $gte: options.startDate,
+            $lte: options.endDate,
+          }
+        } : {})
+      });
+      
+      return activeUsersCount;
+    } catch (error) {
+      console.error('Error calculating active users:', error);
+      return 0;
+    }
   }
   
   private async countTotalTasks(options: AnalyticsOptions): Promise<number> {
-    // Implementation would count total tasks created in the period
-    return 156; // Example: 156 total tasks
+    try {
+      // Count tasks created within the date range
+      const query: any = {};
+      
+      if (options.startDate && options.endDate) {
+        query.createdAt = {
+          $gte: options.startDate,
+          $lte: options.endDate,
+        };
+      }
+      
+      const totalTasks = await Task.countDocuments(query);
+      return totalTasks;
+    } catch (error) {
+      console.error('Error counting total tasks:', error);
+      return 0;
+    }
   }
   
   private async calculateSystemCompletionRate(options: AnalyticsOptions): Promise<number> {
-    // Implementation would calculate system-wide completion rate
-    return 73.8; // Example: 73.8% completion rate
+    try {
+      // Build query based on date range
+      const query: any = {};
+      
+      if (options.startDate && options.endDate) {
+        query.updatedAt = {
+          $gte: options.startDate,
+          $lte: options.endDate,
+        };
+      }
+      
+      // Count completed tasks
+      const completedTasks = await Task.countDocuments({
+        ...query,
+        status: 'completed',
+      });
+      
+      // Count all tasks
+      const allTasks = await Task.countDocuments(query);
+      
+      // Calculate completion rate
+      if (allTasks === 0) return 0;
+      
+      const completionRate = (completedTasks / allTasks) * 100;
+      return parseFloat(completionRate.toFixed(1));
+    } catch (error) {
+      console.error('Error calculating system completion rate:', error);
+      return 0;
+    }
   }
   
   private async calculateAverageTasksPerUser(options: AnalyticsOptions): Promise<number> {
@@ -763,15 +821,86 @@ class AnalyticsService {
     teamId: mongoose.Types.ObjectId,
     options: AnalyticsOptions
   ): Promise<any> {
-    // Implementation similar to user trends but for team level
-    // (Placeholder implementation for brevity)
-    return { /* team trend data */ };
+    // Try to find cached data if refresh is not requested
+    if (!options.refreshCache) {
+      const cachedData = await this.getCachedAnalytics('team', undefined, teamId, 'trends');
+      if (cachedData) {
+        return cachedData;
+      }
+    }
+    
+    // Placeholder data for team trends
+    const teamPerformanceTrend = this.generatePlaceholderTimeSeries(options, 40, 90);
+    
+    // Build metrics array
+    const metrics: IMetricData[] = [
+      {
+        name: 'avgTeamPerformance',
+        value: this.calculateAverageFromTimeSeries(teamPerformanceTrend),
+        unit: 'percent',
+      }
+    ];
+    
+    // Build time series with correct interval type
+    const timeSeries = [
+      {
+        name: 'teamPerformanceTrend',
+        points: teamPerformanceTrend,
+        interval: 'daily' as 'daily' | 'hourly' | 'weekly' | 'monthly',
+      }
+    ];
+    
+    // Save to cache
+    const analyticsData = await this.saveAnalyticsToCache({
+      team: teamId,
+      type: 'team',
+      category: 'trends',
+      metrics,
+      timeSeries,
+    });
+    
+    return analyticsData;
   }
   
   private async getSystemTrendAnalytics(options: AnalyticsOptions): Promise<any> {
-    // Implementation for system-wide trends
-    // (Placeholder implementation for brevity)
-    return { /* system trend data */ };
+    // Try to find cached data if refresh is not requested
+    if (!options.refreshCache) {
+      const cachedData = await this.getCachedAnalytics('system', undefined, undefined, 'trends');
+      if (cachedData) {
+        return cachedData;
+      }
+    }
+    
+    // Placeholder data for system trends
+    const systemActivityTrend = this.generatePlaceholderTimeSeries(options, 20, 70);
+    
+    // Build metrics array
+    const metrics: IMetricData[] = [
+      {
+        name: 'systemActivity',
+        value: this.calculateAverageFromTimeSeries(systemActivityTrend),
+        unit: 'actions_per_day',
+      }
+    ];
+    
+    // Build time series with correct interval type
+    const timeSeries = [
+      {
+        name: 'systemActivityTrend',
+        points: systemActivityTrend,
+        interval: 'daily' as 'daily' | 'hourly' | 'weekly' | 'monthly',
+      }
+    ];
+    
+    // Save to cache
+    const analyticsData = await this.saveAnalyticsToCache({
+      type: 'system',
+      category: 'trends',
+      metrics,
+      timeSeries,
+    });
+    
+    return analyticsData;
   }
   
   // Helper methods for trend calculations

@@ -414,14 +414,6 @@ const CalendarView: React.FC<CalendarViewProps> = ({
           <CardContent>
             {selectedDate && (
               <div className="space-y-4">
-                <Button
-                  onClick={() => onAddEvent?.(selectedDate)}
-                  className="w-full bg-gradient-to-r from-blue-600 to-green-600 hover:from-blue-700 hover:to-green-700"
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Event
-                </Button>
-                
                 {selectedDateEvents.length > 0 ? (
                   <div className="space-y-3 max-h-64 overflow-y-auto">
                     <h4 className="font-semibold text-gray-900 dark:text-gray-100">

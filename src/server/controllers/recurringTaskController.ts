@@ -5,17 +5,25 @@ import { RecurringTask, Task, IRecurringTask } from '../models';
 import { ErrorResponse } from '../middleware/errorMiddleware';
 import { clearEntityCache } from '../middleware/cacheMiddleware';
 
+// Import the Request type with extended properties
+import 'express';
+
 /**
  * @desc    Get all recurring tasks with filtering
  * @route   GET /api/recurring-tasks
  * @access  Private
  */
-export const getRecurringTasks = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+export const getRecurringTasks = async (
+  req: Request, 
+  res: Response, 
+  next: NextFunction
+) => {
   try {
     // Validate query parameters
     await query('page').optional().isInt({ min: 1 }).toInt().withMessage('Page must be a positive integer').run(req);
     await query('limit').optional().isInt({ min: 1, max: 50 }).toInt().withMessage('Limit must be between 1 and 50').run(req);
     await query('frequency').optional().isIn(['daily', 'weekly', 'monthly', 'yearly']).withMessage('Invalid frequency').run(req);
+    await query('filter').optional().isString().withMessage('Filter must be a string').run(req);
 
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -26,13 +34,16 @@ export const getRecurringTasks = async (req: Request, res: Response, next: NextF
       return;
     }
 
-    // Pagination
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 20;
-    const skip = (page - 1) * limit;
+    // Pagination parameters
+    const page: number = parseInt(req.query.page as string) || 1;
+    const limit: number = parseInt(req.query.limit as string) || 20;
+    const skip: number = (page - 1) * limit;
+
+    // Filter parameter (if provided)
+    const filterParam: string | undefined = req.query.filter as string | undefined;
 
     // Build filter object based on query params
-    const filter: any = {};
+    const filter: { [key: string]: any } = {};
 
     // Only show the user's own recurring tasks unless they're admin
     if (req.user && req.user.role !== 'admin') {
@@ -66,10 +77,12 @@ export const getRecurringTasks = async (req: Request, res: Response, next: NextF
     }
 
     // Get total count
-    const total = await RecurringTask.countDocuments(filter);
+    const filterObject = filter || {};
+    const total: number = await RecurringTask.countDocuments(filterObject);
 
     // Get recurring tasks
-    const recurringTasks = await RecurringTask.find(filter)
+    const recurringTasks = await RecurringTask
+      .find(filterObject)
       .populate('createdBy', 'name email avatar')
       .populate('teamId', 'name')
       .populate('taskTemplate.assignedTo', 'name email avatar')
@@ -77,6 +90,7 @@ export const getRecurringTasks = async (req: Request, res: Response, next: NextF
       .skip(skip)
       .limit(limit);
 
+    // Return response
     res.status(200).json({
       success: true,
       count: recurringTasks.length,
@@ -98,7 +112,7 @@ export const getRecurringTasks = async (req: Request, res: Response, next: NextF
  * @route   GET /api/recurring-tasks/:id
  * @access  Private
  */
-export const getRecurringTaskById = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+export const getRecurringTaskById = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const taskId = req.params.id;
 
@@ -150,7 +164,7 @@ export const getRecurringTaskById = async (req: Request, res: Response, next: Ne
  * @route   POST /api/recurring-tasks
  * @access  Private
  */
-export const createRecurringTask = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+export const createRecurringTask = async (req: Request, res: Response, next: NextFunction) => {
   try {
     // Validate request body
     await Promise.all([
@@ -186,7 +200,6 @@ export const createRecurringTask = async (req: Request, res: Response, next: Nex
     // Check if assignedTo user exists and is accessible
     if (req.body.taskTemplate && req.body.taskTemplate.assignedTo) {
       // Logic to check if the user can assign tasks to this user would go here
-      // This could check if the user is on the same team, etc.
     }
 
     // Validate end date is after start date
@@ -195,7 +208,7 @@ export const createRecurringTask = async (req: Request, res: Response, next: Nex
       return;
     }
 
-    // Create recurring task
+    // Create recurring task data with proper typing
     const recurringTaskData = {
       ...req.body,
       createdBy: req.user!._id,
@@ -203,8 +216,10 @@ export const createRecurringTask = async (req: Request, res: Response, next: Nex
       paused: req.body.paused || false,
     };
 
-    // Calculate the next generation date
+    // Create the recurring task instance
     const recurringTask = new RecurringTask(recurringTaskData);
+    
+    // Calculate the next generation date
     recurringTask.nextGenerationDate = recurringTask.calculateNextOccurrence(new Date());
 
     // Save the recurring task
@@ -221,10 +236,18 @@ export const createRecurringTask = async (req: Request, res: Response, next: Nex
 
     // Generate the first task immediately if not paused and start date is today or in the past
     const now = new Date();
-    now.setHours(0, 0, 0, 0);
+    // Set hours, minutes, seconds and milliseconds individually
+    now.setHours(0);
+    now.setMinutes(0); 
+    now.setSeconds(0);
+    now.setMilliseconds(0);
     
     const startDate = new Date(recurringTask.startDate);
-    startDate.setHours(0, 0, 0, 0);
+    // Set hours, minutes, seconds and milliseconds individually
+    startDate.setHours(0);
+    startDate.setMinutes(0);
+    startDate.setSeconds(0);
+    startDate.setMilliseconds(0);
     
     if (!recurringTask.paused && startDate <= now) {
       await generateTasksForRecurringPattern(recurringTask);
@@ -244,7 +267,7 @@ export const createRecurringTask = async (req: Request, res: Response, next: Nex
  * @route   PUT /api/recurring-tasks/:id
  * @access  Private
  */
-export const updateRecurringTask = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+export const updateRecurringTask = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const taskId = req.params.id;
 
@@ -383,7 +406,7 @@ export const updateRecurringTask = async (req: Request, res: Response, next: Nex
  * @route   DELETE /api/recurring-tasks/:id
  * @access  Private
  */
-export const deleteRecurringTask = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+export const deleteRecurringTask = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const taskId = req.params.id;
 
@@ -435,7 +458,7 @@ export const deleteRecurringTask = async (req: Request, res: Response, next: Nex
  * @route   PUT /api/recurring-tasks/:id/pause
  * @access  Private
  */
-export const pauseRecurringTask = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+export const pauseRecurringTask = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const taskId = req.params.id;
 
@@ -490,7 +513,7 @@ export const pauseRecurringTask = async (req: Request, res: Response, next: Next
  * @route   PUT /api/recurring-tasks/:id/resume
  * @access  Private
  */
-export const resumeRecurringTask = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+export const resumeRecurringTask = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const taskId = req.params.id;
 
@@ -550,7 +573,7 @@ export const resumeRecurringTask = async (req: Request, res: Response, next: Nex
  * @route   POST /api/recurring-tasks/:id/generate
  * @access  Private
  */
-export const generateTasksNow = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+export const generateTasksNow = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const taskId = req.params.id;
 
@@ -607,7 +630,7 @@ export const generateTasksNow = async (req: Request, res: Response, next: NextFu
  * @route   GET /api/recurring-tasks/:id/stats
  * @access  Private
  */
-export const getRecurringTaskStats = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+export const getRecurringTaskStats = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const taskId = req.params.id;
 
@@ -690,7 +713,7 @@ export const getRecurringTaskStats = async (req: Request, res: Response, next: N
  * @route   POST /api/recurring-tasks/:id/skip-date
  * @access  Private
  */
-export const addSkipDate = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+export const addSkipDate = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const taskId = req.params.id;
 
@@ -776,7 +799,7 @@ export const addSkipDate = async (req: Request, res: Response, next: NextFunctio
  * @route   DELETE /api/recurring-tasks/:id/skip-date/:dateId
  * @access  Private
  */
-export const removeSkipDate = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+export const removeSkipDate = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const taskId = req.params.id;
     const dateId = req.params.dateId;
@@ -850,11 +873,14 @@ export async function generateTasksForRecurringPattern(
     // Generate the task data
     const taskData = recurringTask.generateTaskData(currentDate);
 
-    // Add reference to the recurring task
-    taskData.recurringTaskId = recurringTask._id;
+    // Create the complete task data object with recurring task reference
+    const completeTaskData = {
+      ...taskData,
+      recurringTaskId: recurringTask._id
+    };
 
-    // Create and save the task
-    const newTask = new Task(taskData);
+    // Create and save the task with proper typing
+    const newTask = new Task(completeTaskData);
     const savedTask = await newTask.save();
     
     // Populate task data if needed
@@ -893,7 +919,8 @@ async function hasRecurringTaskAccess(user: any, recurringTask: any): Promise<bo
   }
 
   // User has access to their own recurring tasks
-  if (recurringTask.createdBy.toString() === user._id.toString()) {
+  if (recurringTask.createdBy && user._id && 
+      recurringTask.createdBy.toString() === user._id.toString()) {
     return true;
   }
 
@@ -921,7 +948,8 @@ async function hasRecurringTaskUpdateAccess(user: any, recurringTask: any): Prom
   }
 
   // Creator has update access to their own recurring tasks
-  if (recurringTask.createdBy.toString() === user._id.toString()) {
+  if (recurringTask.createdBy && user._id && 
+      recurringTask.createdBy.toString() === user._id.toString()) {
     return true;
   }
 

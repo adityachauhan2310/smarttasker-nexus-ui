@@ -60,12 +60,24 @@ export class ApiClient {
 
     // Add response interceptor for error handling
     this.instance.interceptors.response.use(
-      (response) => response,
+      (response) => {
+        // Log successful responses in development
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`API Success [${response.config.method?.toUpperCase()}] ${response.config.url}:`, response.status);
+        }
+        return response;
+      },
       async (error) => {
         const originalRequest = error.config;
         
-        // Log the error for debugging
-        console.error('API Error:', error.response?.status, error.response?.data || error.message);
+        // Enhanced error logging
+        console.error('API Error:', {
+          status: error.response?.status,
+          url: originalRequest?.url,
+          method: originalRequest?.method,
+          data: error.response?.data || error.message,
+          errorCode: error.code
+        });
         
         // Network errors or CORS issues
         if (error.code === 'ERR_NETWORK') {
@@ -76,12 +88,15 @@ export class ApiClient {
         }
         
         // Handle token expiration and refresh
-        if (error.response?.status === 401 && !originalRequest?._retry) {
+        if (error.response?.status === 401 && 
+            !originalRequest?._retry && 
+            !originalRequest?._skipAuthRefresh) {
           originalRequest._retry = true;
           
           try {
             // If we're already refreshing a token, wait for that to finish
             if (this.refreshingToken) {
+              console.log('Waiting for in-progress token refresh');
               const newToken = await this.refreshingToken;
               if (newToken) {
                 this.setAuthToken(newToken);
@@ -107,12 +122,22 @@ export class ApiClient {
                 this.pendingRequests = [];
                 
                 return this.instance(originalRequest);
+              } else {
+                console.log('Token refresh failed, will redirect to login');
+                // Trigger any event listeners or callbacks for auth failure
+                window.dispatchEvent(new CustomEvent('auth:required', { 
+                  detail: { reason: 'token_refresh_failed' } 
+                }));
               }
             }
           } catch (refreshError) {
             // If refresh fails, redirect to login
             this.clearAuthToken();
             console.error('Token refresh failed', refreshError);
+            // Trigger any event listeners or callbacks for auth failure
+            window.dispatchEvent(new CustomEvent('auth:required', { 
+              detail: { reason: 'token_refresh_error', error: refreshError } 
+            }));
             return Promise.reject(this.normalizeError(refreshError));
           }
         }
@@ -133,6 +158,24 @@ export class ApiClient {
             return new Promise(resolve => {
               setTimeout(() => resolve(this.instance(originalRequest)), delay);
             });
+          }
+        }
+
+        // Handle specific error status codes
+        if (error.response) {
+          switch (error.response.status) {
+            case 400:
+              console.error('Bad request error:', error.response.data);
+              break;
+            case 403:
+              console.error('Forbidden error - check permissions:', error.response.data);
+              break;
+            case 404:
+              console.error('Resource not found:', error.response.data);
+              break;
+            case 500:
+              console.error('Server error:', error.response.data);
+              break;
           }
         }
 
@@ -175,7 +218,13 @@ export class ApiClient {
    */
   public setAuthToken(token: string): void {
     this.authToken = token;
-    localStorage.setItem('authToken', token);
+    try {
+      localStorage.setItem('authToken', token);
+      // Backup to sessionStorage as well for additional persistence
+      sessionStorage.setItem('authToken', token);
+    } catch (error) {
+      console.error('Error storing auth token:', error);
+    }
   }
 
   /**
@@ -183,17 +232,37 @@ export class ApiClient {
    */
   public clearAuthToken(): void {
     this.authToken = null;
-    localStorage.removeItem('authToken');
+    try {
+      localStorage.removeItem('authToken');
+      sessionStorage.removeItem('authToken');
+    } catch (error) {
+      console.error('Error clearing auth token:', error);
+    }
   }
 
   /**
-   * Try to restore auth token from localStorage
+   * Try to restore auth token from localStorage or sessionStorage
    */
   public restoreAuthToken(): boolean {
-    const token = localStorage.getItem('authToken');
-    if (token) {
-      this.authToken = token;
-      return true;
+    try {
+      // Try localStorage first
+      let token = localStorage.getItem('authToken');
+      
+      // If not in localStorage, try sessionStorage as fallback
+      if (!token) {
+        token = sessionStorage.getItem('authToken');
+        // If found in sessionStorage but not localStorage, sync it back to localStorage
+        if (token) {
+          localStorage.setItem('authToken', token);
+        }
+      }
+      
+      if (token) {
+        this.authToken = token;
+        return true;
+      }
+    } catch (error) {
+      console.error('Error restoring auth token:', error);
     }
     return false;
   }
@@ -202,15 +271,49 @@ export class ApiClient {
    * Refresh auth token
    */
   public async refreshToken(): Promise<string | null> {
-    try {
-      const response = await this.instance.post('/auth/refresh-token', {}, {
-        withCredentials: true,
-        headers: { 'Authorization': '' }, // Don't send current token
-      });
-      return response.data.token;
-    } catch (error) {
-      return null;
+    // If a token refresh is already in progress, wait for it to complete
+    if (this.refreshingToken) {
+      console.log('Attaching to existing token refresh promise');
+      return this.refreshingToken;
     }
+
+    console.log('Attempting to refresh auth token');
+    
+    // Start a new refresh token request and store the promise
+    this.refreshingToken = new Promise(async (resolve, reject) => {
+      try {
+        const response = await this.instance.post('/auth/refresh-token', {}, {
+          withCredentials: true,
+          headers: { 'Authorization': '' }, // Don't send current token
+          // Don't trigger another token refresh for this request
+          _skipAuthRefresh: true
+        });
+        
+        if (response?.data?.token) {
+          console.log('Token refresh successful');
+          this.setAuthToken(response.data.token);
+          resolve(response.data.token);
+        } else if (response?.data?.data?.token) {
+          // Handle different API response formats
+          console.log('Token refresh successful (alternative format)');
+          this.setAuthToken(response.data.data.token);
+          resolve(response.data.data.token);
+        } else {
+          console.warn('Token refresh response did not contain a token');
+          this.clearAuthToken();
+          resolve(null);
+        }
+      } catch (error) {
+        console.error('Token refresh failed:', error);
+        this.clearAuthToken();
+        resolve(null); // Resolve with null to prevent unhandled promise rejections
+      } finally {
+        // Clear the promise so that subsequent calls can trigger a new refresh
+        this.refreshingToken = null;
+      }
+    });
+
+    return this.refreshingToken;
   }
 
   /**
@@ -243,21 +346,66 @@ export class ApiClient {
    * Make a PUT request
    */
   public async put<T = any>(url: string, data?: any, config?: any): Promise<any> {
-    return this.instance.put(url, data, config);
+    try {
+      const startTime = Date.now();
+      console.log(`API PUT Request: ${url}`);
+      
+      const response = await this.instance.put(url, data, config);
+      
+      const endTime = Date.now();
+      console.log(`API PUT Response [${endTime - startTime}ms]: ${url}`, {
+        status: response.status,
+        statusText: response.statusText,
+      });
+      
+      return response;
+    } catch (error) {
+      console.error(`API PUT Error for ${url}:`, error);
+      throw error;
+    }
   }
 
   /**
    * Make a PATCH request
    */
   public async patch<T = any>(url: string, data?: any, config?: any): Promise<any> {
-    return this.instance.patch(url, data, config);
+    try {
+      console.log(`API PATCH request to ${this.config.baseURL}${url}`, { data });
+      const response = await this.instance.patch(url, data, config);
+      return response;
+    } catch (error) {
+      console.error(`API PATCH error to ${url}:`, error);
+      console.error('Server details:', {
+        url: `${this.config.baseURL}${url}`,
+        status: error.response?.status,
+        data: error.response?.data
+      });
+      throw error;
+    }
   }
 
   /**
-   * Make a DELETE request
+   * DELETE request
    */
   public async delete<T = any>(url: string, config?: any): Promise<any> {
-    return this.instance.delete(url, config);
+    try {
+      const startTime = Date.now();
+      console.log(`API DELETE Request: ${url}`);
+      
+      const response = await this.instance.delete(url, config);
+      
+      const endTime = Date.now();
+      console.log(`API DELETE Response [${endTime - startTime}ms]: ${url}`, {
+        status: response.status,
+        statusText: response.statusText,
+        config: response.config
+      });
+      
+      return response;
+    } catch (error) {
+      console.error(`API DELETE Error for ${url}:`, error);
+      throw error;
+    }
   }
 
   /**
@@ -318,10 +466,12 @@ const apiConfig: ApiClientConfig = {
 };
 
 const apiClient = new ApiClient(apiConfig);
-// Try to restore auth token from localStorage
-apiClient.restoreAuthToken();
 
+// Immediately try to restore auth token from storage
+const hasRestoredToken = apiClient.restoreAuthToken();
 console.log('API Client initialized with baseURL:', apiConfig.baseURL);
+console.log('Auth token restored from storage:', hasRestoredToken ? 'Yes' : 'No');
+
 // Enable etag support for improved performance
 apiClient.enableEtagCaching();
 

@@ -28,6 +28,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useUsers, useDeleteUser, useUpdateUser, useResetUserPassword } from '@/hooks/useApi';
 import AddUserModal from '@/components/modals/AddUserModal';
+import ResetPasswordModal from '@/components/modals/ResetPasswordModal';
 import { useToast } from '@/hooks/use-toast';
 import {
   AlertDialog,
@@ -99,27 +100,39 @@ const UserManagement = () => {
     if (!userToDelete) return;
     try {
       sonnerToast.loading("Deleting user...");
+      console.log(`Attempting to delete user with ID: ${userToDelete}`);
       await deleteUserMutation.mutateAsync(userToDelete);
+      console.log(`User deletion successful for ID: ${userToDelete}`);
+      sonnerToast.dismiss();
       sonnerToast.success("User deleted successfully");
       setUserToDelete(null);
       refetch();
-    } catch (error) {
-      console.error('Error deleting user:', error, error?.response?.data);
-      sonnerToast.error(`Failed to delete user. ${error?.message || ''} ${error?.response?.data?.message || ''}`);
+    } catch (error: any) {
+      console.error('Error deleting user:', error);
+      console.error('Error details:', {
+        message: error?.message,
+        responseMessage: error?.response?.data?.message,
+        status: error?.response?.status,
+      });
+      sonnerToast.dismiss();
+      sonnerToast.error(`Failed to delete user: ${error?.message || ''} ${error?.response?.data?.message || ''}`);
     }
   };
 
   const handleToggleUserStatus = async (userId: string, currentStatus: boolean) => {
     try {
+      const newStatus = !currentStatus;
       sonnerToast.loading(`${currentStatus ? "Deactivating" : "Activating"} user...`);
       await updateUserMutation.mutateAsync({
         userId,
-        userData: { isActive: !currentStatus },
+        userData: { isActive: newStatus },
       });
-      sonnerToast.success(`User ${!currentStatus ? "activated" : "deactivated"} successfully`);
+      sonnerToast.dismiss();
+      sonnerToast.success(`User ${newStatus ? "activated" : "deactivated"} successfully`);
       refetch();
-    } catch (error) {
-      console.error('Error updating user status:', error, error?.response?.data);
+    } catch (error: any) {
+      console.error('Error updating user status:', error);
+      sonnerToast.dismiss();
       sonnerToast.error(`Failed to update user status. ${error?.message || ''} ${error?.response?.data?.message || ''}`);
     }
   };
@@ -177,7 +190,7 @@ const UserManagement = () => {
   };
 
   return (
-    <div className="min-h-screen w-full bg-gradient-to-br from-slate-100 via-blue-50 to-purple-100 dark:from-slate-950 dark:via-blue-950/90 dark:to-purple-950/90 py-10 px-2">
+    <div className="min-h-screen w-full bg-gradient-to-br from-slate-100 via-blue-50 to-purple-100 dark:from-slate-950 dark:via-blue-950/90 dark:to-purple-950/90 py-10 px-8">
       <div className="max-w-5xl mx-auto">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-8 gap-4">
           <div>
@@ -316,10 +329,7 @@ const UserManagement = () => {
                           disabled={updateUserMutation.isPending}
                         >
                           {user.isActive ? (
-                            <>
-                              <X className="h-4 w-4 mr-2" />
-                              Deactivate
-                            </>
+                            <><EyeOff className="mr-2 h-4 w-4" /> Deactivate</>
                           ) : (
                             <>
                               <Check className="h-4 w-4 mr-2" />
@@ -428,12 +438,19 @@ const UserManagement = () => {
             userId={resetPasswordUserId}
             onReset={async (password) => {
               try {
-                await resetUserPasswordMutation.mutateAsync({ userId: resetPasswordUserId, password });
+                sonnerToast.loading("Resetting password...");
+                await resetUserPasswordMutation.mutateAsync({ 
+                  userId: resetPasswordUserId, 
+                  password 
+                });
+                sonnerToast.dismiss();
+                sonnerToast.success("User password reset successfully");
                 setResetPasswordModalOpen(false);
                 setResetPasswordUserId(null);
                 refetch();
-              } catch (error) {
-                console.error('Error resetting password:', error, error?.response?.data);
+              } catch (error: any) {
+                console.error('Error resetting password:', error);
+                sonnerToast.dismiss();
                 sonnerToast.error(`Failed to reset password. ${error?.message || ''} ${error?.response?.data?.message || ''}`);
               }
             }}
@@ -442,51 +459,6 @@ const UserManagement = () => {
         )}
       </div>
     </div>
-  );
-};
-
-const ResetPasswordModal = ({ isOpen, onClose, userId, onReset, isLoading }) => {
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  return (
-    <AlertDialog open={isOpen} onOpenChange={onClose}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Reset Password</AlertDialogTitle>
-          <AlertDialogDescription>
-            Enter a new password for this user. It must be at least 6 characters.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <div className="relative">
-          <Input
-            type={showPassword ? "text" : "password"}
-            placeholder="New password"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            minLength={6}
-          />
-          <button
-            type="button"
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
-            onClick={() => setShowPassword(v => !v)}
-            tabIndex={-1}
-            aria-label={showPassword ? 'Hide password' : 'Show password'}
-          >
-            {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-          </button>
-        </div>
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={isLoading} onClick={onClose}>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            disabled={isLoading || password.length < 6}
-            onClick={() => onReset(password)}
-          >
-            {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-            Reset Password
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
   );
 };
 

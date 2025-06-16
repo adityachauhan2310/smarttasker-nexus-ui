@@ -91,23 +91,28 @@ export interface TeamResponse {
 /**
  * Analytics API responses
  */
+export interface MetricData {
+  name: string;
+  value: number | string;
+  unit?: string;
+  metadata?: any;
+}
+
 export interface AnalyticsData {
-  taskCompletionRate: number;
-  tasksCompleted: number;
-  tasksCreated: number;
-  activeUsers: number;
-  timeframeStart: string;
-  timeframeEnd: string;
-  tasksPending?: number;
-  tasksOverdue?: number;
-  userGrowthRate?: number;
-  newTeamsThisWeek?: number;
-  recentActivities?: Array<{
-    userName?: string;
-    action?: string;
-    subject?: string;
-    timeAgo?: string;
+  metrics?: MetricData[];
+  timeSeries?: Array<{
+    name: string;
+    points: Array<{x: string, y: number}>;
+    interval: string;
   }>;
+  activeUsers?: number;
+  totalUsers?: number;
+  tasksCreated?: number;
+  tasksCompleted?: number;
+  taskCompletionRate?: number;
+  teamsCount?: number;
+  eventsCount?: number;
+  upcomingDeadlines?: number;
 }
 
 export interface AnalyticsResponse {

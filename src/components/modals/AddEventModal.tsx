@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { useCreateCalendarEvent, useUsers, useTeams } from '@/hooks/useApi';
+import { useCreateCalendarEvent } from '@/hooks/useApi';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -46,8 +46,6 @@ const formSchema = z.object({
   duration: z.number().min(1).optional(),
   type: z.enum(['meeting', 'deadline', 'task', 'event', 'maintenance', 'audit', 'hr']),
   priority: z.enum(['high', 'medium', 'low']).optional(),
-  teamId: z.string().optional(),
-  assigneeId: z.string().optional(),
   status: z.enum(['confirmed', 'tentative', 'cancelled']).default('confirmed'),
 });
 
@@ -66,33 +64,6 @@ const AddEventModal: React.FC<AddEventModalProps> = ({
 }) => {
   const createEventMutation = useCreateCalendarEvent();
   
-  // Fetch users for assignee selection
-  const { data: usersData, isLoading: isLoadingUsers } = useUsers({
-    limit: 100
-  });
-  const users = usersData?.data || [];
-  
-  // Fetch teams
-  const { data: teamsData, isLoading: isLoadingTeams } = useTeams({
-    limit: 100
-  });
-  
-  // Debug the response structure
-  React.useEffect(() => {
-    if (teamsData) {
-      console.log("Teams data:", teamsData);
-    }
-  }, [teamsData]);
-  
-  // Extract teams from the response with proper typing
-  // Use type assertion with unknown as intermediate to avoid type errors
-  interface TeamWithId {
-    id: string;
-    name: string;
-    [key: string]: any;
-  }
-  const teams = (teamsData?.data as unknown as TeamWithId[]) || [];
-  
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -103,8 +74,6 @@ const AddEventModal: React.FC<AddEventModalProps> = ({
       duration: 30,
       type: 'event',
       priority: 'medium',
-      teamId: undefined,
-      assigneeId: undefined,
       status: 'confirmed',
     },
   });
@@ -118,16 +87,15 @@ const AddEventModal: React.FC<AddEventModalProps> = ({
 
   const onSubmit = async (values: FormValues) => {
     try {
-      // Create a copy of the values where we can modify values
-      const submitData = {...values};
+      const { date, time, ...rest } = values;
       
-      // Convert special values
-      if (submitData.teamId === 'none') {
-        delete submitData.teamId;
-      }
-      
-      if (submitData.assigneeId === 'none') {
-        delete submitData.assigneeId;
+      const submitData: any = {
+        ...rest,
+        date: date.toISOString(),
+      };
+
+      if (time) {
+        submitData.time = time;
       }
       
       await createEventMutation.mutateAsync(submitData);
@@ -285,91 +253,6 @@ const AddEventModal: React.FC<AddEventModalProps> = ({
                         <SelectItem value="high">High</SelectItem>
                         <SelectItem value="medium">Medium</SelectItem>
                         <SelectItem value="low">Low</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-            
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="teamId"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Team (optional)</FormLabel>
-                    <Select 
-                      onValueChange={field.onChange} 
-                      value={field.value || undefined}
-                      disabled={isLoadingTeams}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select team" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="none">None</SelectItem>
-                        {isLoadingTeams ? (
-                          <div className="flex items-center justify-center p-2">
-                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                            <span>Loading teams...</span>
-                          </div>
-                        ) : teams.length === 0 ? (
-                          <div className="p-2 text-center text-sm">
-                            No teams available
-                          </div>
-                        ) : (
-                          // @ts-ignore - API response structure doesn't match TypeScript expectations
-                          teams.map(team => (
-                            <SelectItem key={team.id} value={team.id}>
-                              {team.name}
-                            </SelectItem>
-                          ))
-                        )}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              
-              <FormField
-                control={form.control}
-                name="assigneeId"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Assignee (optional)</FormLabel>
-                    <Select 
-                      onValueChange={field.onChange} 
-                      value={field.value || undefined}
-                      disabled={isLoadingUsers}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select assignee" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="none">None</SelectItem>
-                        {isLoadingUsers ? (
-                          <div className="flex items-center justify-center p-2">
-                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                            <span>Loading users...</span>
-                          </div>
-                        ) : users.length === 0 ? (
-                          <div className="p-2 text-center text-sm">
-                            No users available
-                          </div>
-                        ) : (
-                          users.map(user => (
-                            <SelectItem key={user.id} value={user.id}>
-                              {user.name}
-                            </SelectItem>
-                          ))
-                        )}
                       </SelectContent>
                     </Select>
                     <FormMessage />

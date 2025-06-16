@@ -26,6 +26,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // State
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [refreshAttempts, setRefreshAttempts] = useState<number>(0);
   
   // Initialize React Query client
   const queryClient = useQueryClient();
@@ -33,46 +34,50 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // React Query hooks with minimal configuration
   const loginMutation = useLogin();
   const logoutMutation = useLogout();
-  const { refetch: fetchUser } = useCurrentUser({ 
+  const { refetch: fetchUser, isError: userFetchError } = useCurrentUser({ 
     queryKey: ['currentUser'],
-    enabled: false 
+    enabled: false,
+    retry: 3,
+    retryDelay: 1000,
+    staleTime: 5 * 60 * 1000, // 5 minutes
   });
   
-  // Check auth status on mount
+  // Check auth status on mount and whenever refreshAttempts changes
   useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        let hasToken = apiClient.restoreAuthToken();
-        // If no token, try to refresh using the refresh token cookie
-        if (!hasToken) {
-          const newToken = await apiClient.refreshToken();
-          if (newToken) {
-            apiClient.setAuthToken(newToken);
-            hasToken = true;
-          }
-        }
-        if (!hasToken) {
-          setLoading(false);
-          return;
-        }
+    const checkAuthStatus = async () => {
+      setLoading(true);
+      // We rely on the apiClient to have restored the token from storage
+      // on initialization.
+      const hasToken = apiClient.restoreAuthToken();
+
+      if (hasToken) {
         try {
+          // fetch user, but don't cause a logout if it fails initially.
+          // The interceptor will handle token refresh on 401s for subsequent requests.
           const response = await fetchUser();
           if (response.data?.data?.user) {
             setUser(response.data.data.user);
+          } else {
+            // If we got a response but no user, try to refresh the token
+            const refreshed = await apiClient.refreshToken();
+            if (refreshed && refreshAttempts < 3) {
+              setRefreshAttempts(prev => prev + 1);
+            }
           }
         } catch (error) {
-          console.error("Auth check failed:", error);
-          apiClient.clearAuthToken();
-        } finally {
-          setLoading(false);
+          console.error("Failed to fetch user on initial load:", error);
+          // Try to refresh the token if fetch fails
+          const refreshed = await apiClient.refreshToken();
+          if (refreshed && refreshAttempts < 3) {
+            setRefreshAttempts(prev => prev + 1);
+          }
         }
-      } catch (error) {
-        console.error("Auth check error:", error);
-        setLoading(false);
       }
+      setLoading(false);
     };
-    checkAuth();
-  }, []); // Only run on mount
+
+    checkAuthStatus();
+  }, [fetchUser, refreshAttempts]);
   
   // Login function
   const login = useCallback(async (email: string, password: string) => {
@@ -95,7 +100,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const logout = useCallback(() => {
     logoutMutation.mutate();
     setUser(null);
-  }, [logoutMutation]);
+    apiClient.clearAuthToken(); // Ensure token is cleared
+    // Clear React Query cache on logout
+    queryClient.clear();
+  }, [logoutMutation, queryClient]);
   
   // Permission check
   const hasPermission = useCallback((requiredRole?: string) => {

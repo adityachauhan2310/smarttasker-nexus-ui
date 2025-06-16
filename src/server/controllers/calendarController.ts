@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
 import { body, query, param, validationResult } from 'express-validator';
-import { CalendarEvent, User, Team } from '../models';
+import { CalendarEvent, User, Team, Task } from '../models';
 import { ErrorResponse } from '../middleware/errorMiddleware';
 
 /**
@@ -100,16 +100,41 @@ export const getCalendarEvents = async (req: Request, res: Response, next: NextF
       .skip(skip)
       .limit(limit);
 
+    // Get tasks that have a due date
+    const tasks = await Task.find({
+      dueDate: { $ne: null },
+      ...filter,
+    })
+      .populate('assignee', 'name email avatar')
+      .populate('team', 'name');
+
+    // Combine events and tasks
+    const combined = [
+      ...events,
+      ...tasks.map(task => ({
+        id: task._id.toString(),
+        title: task.title,
+        date: task.dueDate,
+        type: 'task',
+        description: task.description,
+        priority: task.priority,
+        status: task.status,
+        assigneeId: task.assignee,
+        teamId: task.team,
+        isTask: true,
+      })),
+    ];
+
     res.status(200).json({
       success: true,
       data: {
-        events,
+        events: combined,
       },
       pagination: {
-        total,
+        total: total + tasks.length,
         page,
         limit,
-        pages: Math.ceil(total / limit),
+        pages: Math.ceil((total + tasks.length) / limit),
       },
     });
   } catch (error) {
@@ -181,15 +206,8 @@ export const createCalendarEvent = async (req: Request, res: Response, next: Nex
       body('impact').optional().isIn(['high', 'medium', 'low']).withMessage('Invalid impact level').run(req),
       body('attendees').optional().isArray().withMessage('Attendees must be an array').run(req),
       body('attendees.*').optional().isMongoId().withMessage('Valid attendee IDs are required').run(req),
-      body('assigneeId').optional().custom(value => {
-        // Allow "none" or valid MongoDB ObjectId
-        return value === "none" || (value && mongoose.Types.ObjectId.isValid(value));
-      }).withMessage('Valid assignee ID is required').run(req),
-      body('teamId').optional().custom(value => {
-        // Allow "none" or valid MongoDB ObjectId
-        return value === "none" || (value && mongoose.Types.ObjectId.isValid(value));
-      }).withMessage('Valid team ID is required').run(req),
       body('status').optional().isIn(['confirmed', 'tentative', 'cancelled']).withMessage('Invalid status').run(req),
+      body('taskId').optional().isMongoId().withMessage('Valid task ID is required').run(req),
     ]);
 
     const errors = validationResult(req);
@@ -201,47 +219,16 @@ export const createCalendarEvent = async (req: Request, res: Response, next: Nex
       return;
     }
 
-    // Handle special "none" value for teamId
-    if (req.body.teamId === "none") {
-      delete req.body.teamId;
-    }
-
-    // Handle special "none" value for assigneeId
-    if (req.body.assigneeId === "none") {
-      delete req.body.assigneeId;
-    }
-
-    // Check team access if teamId is provided
-    if (req.body.teamId && req.body.teamId !== "none") {
-      const team = await Team.findById(req.body.teamId);
-      if (!team) {
-        next(new ErrorResponse('Team not found', 404));
-        return;
-      }
-
-      // Check if user has access to this team
-      const isTeamLeader = team.leader.toString() === req.user!._id.toString();
-      const isTeamMember = team.members.some(member => member.toString() === req.user!._id.toString());
-      const isAdmin = req.user!.role === 'admin';
-
-      if (!isAdmin && !isTeamLeader && !isTeamMember) {
-        next(new ErrorResponse('Not authorized to create events for this team', 403));
-        return;
-      }
-    }
-
     // Validate attendees if provided
     if (req.body.attendees && req.body.attendees.length > 0) {
       const attendeeIds = req.body.attendees.map((id: string) => new mongoose.Types.ObjectId(id));
       
-      // Check for duplicate attendees
       const uniqueAttendees = [...new Set(attendeeIds.map(id => id.toString()))];
       if (uniqueAttendees.length !== attendeeIds.length) {
         next(new ErrorResponse('Duplicate attendee IDs provided', 400));
         return;
       }
 
-      // Check if each attendee exists
       const attendees = await User.find({ _id: { $in: attendeeIds } });
       if (attendees.length !== attendeeIds.length) {
         next(new ErrorResponse('One or more attendees not found', 404));
@@ -249,14 +236,23 @@ export const createCalendarEvent = async (req: Request, res: Response, next: Nex
       }
     }
 
-    // Create event
-    const calendarEvent = await CalendarEvent.create({
+    const eventData: any = {
       ...req.body,
-      assignedById: req.user!._id, // Set current user as the creator
-    });
+      assignedById: req.user!._id,
+    };
+
+    if (req.user!.role === 'admin') {
+      eventData.assigneeId = req.user!._id;
+    }
+
+    if (req.body.taskId) {
+      eventData.taskId = req.body.taskId;
+    }
+
+    // Create event
+    const calendarEvent = await CalendarEvent.create(eventData);
 
     // Populate references
-    await calendarEvent.populate('assigneeId', 'name email avatar');
     await calendarEvent.populate('assignedById', 'name email avatar');
     await calendarEvent.populate('teamId', 'name');
     await calendarEvent.populate('attendees', 'name email avatar');
@@ -301,7 +297,7 @@ export const updateCalendarEvent = async (req: Request, res: Response, next: Nex
       body('attendees.*').optional().isMongoId().withMessage('Valid attendee IDs are required').run(req),
       body('assigneeId').optional().isMongoId().withMessage('Valid assignee ID is required').run(req),
       body('teamId').optional().isMongoId().withMessage('Valid team ID is required').run(req),
-      body('status').optional().isIn(['confirmed', 'tentative', 'cancelled']).withMessage('Invalid status').run(req),
+      body('status').optional().isIn(['confirmed', 'tentative', 'cancelled']).withMessage('Invalid status'),
     ]);
 
     const errors = validationResult(req);
@@ -326,45 +322,7 @@ export const updateCalendarEvent = async (req: Request, res: Response, next: Nex
       next(new ErrorResponse('Not authorized to update this event', 403));
       return;
     }
-
-    // Check team access if teamId is being updated
-    if (req.body.teamId && req.body.teamId !== event.teamId?.toString()) {
-      const team = await Team.findById(req.body.teamId);
-      if (!team) {
-        next(new ErrorResponse('Team not found', 404));
-        return;
-      }
-
-      // Check if user has access to this team
-      const isTeamLeader = team.leader.toString() === req.user!._id.toString();
-      const isTeamMember = team.members.some(member => member.toString() === req.user!._id.toString());
-      const isAdmin = req.user!.role === 'admin';
-
-      if (!isAdmin && !isTeamLeader && !isTeamMember) {
-        next(new ErrorResponse('Not authorized to assign events to this team', 403));
-        return;
-      }
-    }
-
-    // Validate attendees if provided
-    if (req.body.attendees && req.body.attendees.length > 0) {
-      const attendeeIds = req.body.attendees.map((id: string) => new mongoose.Types.ObjectId(id));
-      
-      // Check for duplicate attendees
-      const uniqueAttendees = [...new Set(attendeeIds.map(id => id.toString()))];
-      if (uniqueAttendees.length !== attendeeIds.length) {
-        next(new ErrorResponse('Duplicate attendee IDs provided', 400));
-        return;
-      }
-
-      // Check if each attendee exists
-      const attendees = await User.find({ _id: { $in: attendeeIds } });
-      if (attendees.length !== attendeeIds.length) {
-        next(new ErrorResponse('One or more attendees not found', 404));
-        return;
-      }
-    }
-
+    
     // Update event
     const updatedEvent = await CalendarEvent.findByIdAndUpdate(
       eventId,

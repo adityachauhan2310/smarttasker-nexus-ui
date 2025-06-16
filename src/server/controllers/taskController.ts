@@ -1,16 +1,29 @@
 import { Request, Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
 import { body, query, param, validationResult } from 'express-validator';
-import { Task, Team, User } from '../models';
+import { Task, Team, User, CalendarEvent } from '../models';
 import { ErrorResponse } from '../middleware/errorMiddleware';
 import { ITask } from '../models/Task';
+
+// Helper function to map task priority to calendar event priority
+function mapTaskPriorityToEventPriority(taskPriority: string): 'high' | 'medium' | 'low' {
+  switch (taskPriority) {
+    case 'urgent':
+    case 'high':
+      return 'high';
+    case 'medium':
+      return 'medium';
+    default:
+      return 'low';
+  }
+}
 
 /**
  * @desc    Get all tasks with filtering, sorting, pagination
  * @route   GET /api/tasks
  * @access  Private
  */
-export const getTasks = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+export const getTasks = async (req: Request, res: Response, next: NextFunction) => {
   try {
     // Validate query parameters
     await Promise.all([
@@ -138,7 +151,7 @@ export const getTasks = async (req: Request, res: Response, next: NextFunction):
  * @route   GET /api/tasks/:id
  * @access  Private
  */
-export const getTaskById = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+export const getTaskById = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const taskId = req.params.id;
 
@@ -182,7 +195,7 @@ export const getTaskById = async (req: Request, res: Response, next: NextFunctio
  * @route   POST /api/tasks
  * @access  Private
  */
-export const createTask = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+export const createTask = async (req: Request, res: Response, next: NextFunction) => {
   try {
     // Validate request
     await Promise.all([
@@ -239,6 +252,29 @@ export const createTask = async (req: Request, res: Response, next: NextFunction
       createdBy: req.user!._id,
     });
 
+    // If task has a due date, create a corresponding calendar event
+    if (task.dueDate) {
+      try {
+        const mappedPriority = mapTaskPriorityToEventPriority(task.priority);
+                              
+        await CalendarEvent.create({
+          title: `Task: ${task.title}`,
+          description: task.description,
+          date: task.dueDate,
+          type: 'task',
+          priority: mappedPriority,
+          status: 'confirmed',
+          assignedById: req.user!._id,
+          assigneeId: task.assignedTo || req.user!._id,
+          taskId: task._id
+        });
+        console.log(`Created calendar event for task ${task._id}`);
+      } catch (err) {
+        console.error('Failed to create calendar event for task:', err);
+        // Don't fail the task creation if calendar event creation fails
+      }
+    }
+
     // Populate references
     await task.populate('createdBy', 'name email avatar');
     if (task.assignedTo) {
@@ -259,7 +295,7 @@ export const createTask = async (req: Request, res: Response, next: NextFunction
  * @route   PUT /api/tasks/:id
  * @access  Private
  */
-export const updateTask = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+export const updateTask = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const taskId = req.params.id;
 
@@ -310,14 +346,43 @@ export const updateTask = async (req: Request, res: Response, next: NextFunction
       return;
     }
 
-    // Update task
-    const updatedTask = await Task.findByIdAndUpdate(
-      taskId,
-      req.body,
-      { new: true, runValidators: true }
-    )
-      .populate('createdBy', 'name email avatar')
-      .populate('assignedTo', 'name email avatar');
+    // Update the task
+    const updatedTask = await Task.findByIdAndUpdate(taskId, req.body, {
+      new: true,
+      runValidators: true,
+    });
+
+    // If the task has a due date, update or create a calendar event
+    if (updatedTask && updatedTask.dueDate) {
+      await CalendarEvent.findOneAndUpdate(
+        { taskId: updatedTask._id },
+        {
+          title: `Task: ${updatedTask.title}`,
+          description: updatedTask.description,
+          date: updatedTask.dueDate,
+          type: 'task',
+          priority: mapTaskPriorityToEventPriority(updatedTask.priority),
+          status: 'confirmed',
+          assignedById: updatedTask.createdBy,
+          assigneeId: updatedTask.assignedTo || updatedTask.createdBy,
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
+    } else if (updatedTask) {
+      // If due date was removed, delete the corresponding calendar event
+      await CalendarEvent.findOneAndDelete({ taskId: updatedTask._id });
+    }
+
+    if (!updatedTask) {
+      next(new ErrorResponse('Task not found after update', 404));
+      return;
+    }
+
+    // Populate references
+    await updatedTask.populate('createdBy', 'name email avatar');
+    if (updatedTask.assignedTo) {
+      await updatedTask.populate('assignedTo', 'name email avatar');
+    }
 
     res.status(200).json({
       success: true,
@@ -333,7 +398,7 @@ export const updateTask = async (req: Request, res: Response, next: NextFunction
  * @route   DELETE /api/tasks/:id
  * @access  Private
  */
-export const deleteTask = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+export const deleteTask = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const taskId = req.params.id;
 
@@ -372,6 +437,15 @@ export const deleteTask = async (req: Request, res: Response, next: NextFunction
     }
 
     await task.deleteOne();
+    
+    // Also delete related calendar event
+    try {
+      await CalendarEvent.findOneAndDelete({ taskId });
+      console.log(`Deleted calendar event for task ${taskId}`);
+    } catch (err) {
+      console.error('Failed to delete calendar event for task:', err);
+      // Don't fail the task deletion if calendar event deletion fails
+    }
 
     res.status(200).json({
       success: true,
@@ -387,7 +461,7 @@ export const deleteTask = async (req: Request, res: Response, next: NextFunction
  * @route   POST /api/tasks/:id/assign
  * @access  Private
  */
-export const assignTask = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+export const assignTask = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const taskId = req.params.id;
 
@@ -459,10 +533,10 @@ export const assignTask = async (req: Request, res: Response, next: NextFunction
 
 /**
  * @desc    Remove assignment from task
- * @route   DELETE /api/tasks/:id/assign
+ * @route   DELETE /api/tasks/:id/unassign
  * @access  Private
  */
-export const removeAssignment = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+export const removeAssignment = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const taskId = req.params.id;
 
@@ -503,7 +577,7 @@ export const removeAssignment = async (req: Request, res: Response, next: NextFu
  * @route   PUT /api/tasks/:id/status
  * @access  Private
  */
-export const updateTaskStatus = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+export const updateTaskStatus = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const taskId = req.params.id;
 
@@ -553,6 +627,26 @@ export const updateTaskStatus = async (req: Request, res: Response, next: NextFu
       task.set('completedAt', new Date(), { strict: false });
       await task.save();
     }
+    
+    // Update related calendar event status if task has due date
+    if (task.dueDate) {
+      try {
+        const taskStatus = req.body.status;
+        // Map task status to calendar event status
+        const eventStatus = taskStatus === 'completed' ? 'confirmed' : 
+                          taskStatus === 'in_progress' ? 'confirmed' : 'tentative';
+        
+        await CalendarEvent.findOneAndUpdate(
+          { taskId },
+          { status: eventStatus },
+          { new: true }
+        );
+        console.log(`Updated calendar event status for task ${taskId}`);
+      } catch (err) {
+        console.error('Failed to update calendar event status for task:', err);
+        // Don't fail the task status update if calendar event update fails
+      }
+    }
 
     res.status(200).json({
       success: true,
@@ -568,7 +662,7 @@ export const updateTaskStatus = async (req: Request, res: Response, next: NextFu
  * @route   PUT /api/tasks/:id/priority
  * @access  Private
  */
-export const updateTaskPriority = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+export const updateTaskPriority = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const taskId = req.params.id;
 
@@ -626,7 +720,7 @@ export const updateTaskPriority = async (req: Request, res: Response, next: Next
  * @route   POST /api/tasks/:id/comments
  * @access  Private
  */
-export const addComment = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+export const addComment = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const taskId = req.params.id;
 
@@ -681,11 +775,11 @@ export const addComment = async (req: Request, res: Response, next: NextFunction
 };
 
 /**
- * @desc    Update task comment
+ * @desc    Update comment
  * @route   PUT /api/tasks/:id/comments/:commentId
  * @access  Private
  */
-export const updateComment = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+export const updateComment = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id: taskId, commentId } = req.params;
 
@@ -749,11 +843,11 @@ export const updateComment = async (req: Request, res: Response, next: NextFunct
 };
 
 /**
- * @desc    Delete task comment
+ * @desc    Delete comment
  * @route   DELETE /api/tasks/:id/comments/:commentId
  * @access  Private
  */
-export const deleteComment = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+export const deleteComment = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id: taskId, commentId } = req.params;
 
@@ -804,11 +898,11 @@ export const deleteComment = async (req: Request, res: Response, next: NextFunct
 };
 
 /**
- * @desc    Get task metrics/statistics for dashboard
+ * @desc    Get task metrics by user or team
  * @route   GET /api/tasks/metrics
  * @access  Private
  */
-export const getTaskMetrics = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+export const getTaskMetrics = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { user } = req;
     if (!user) {
