@@ -1,8 +1,11 @@
+
 import { Request, Response, NextFunction } from 'express';
 import { body, validationResult } from 'express-validator';
 import mongoose from 'mongoose';
 import { User } from '../models';
 import { ErrorResponse } from '../middleware/errorMiddleware';
+import bcrypt from 'bcrypt';
+import config from '../config/config';
 
 /**
  * @desc    Get all users
@@ -33,12 +36,13 @@ export const getUsers = async (req: Request, res: Response, next: NextFunction):
     // Count total users
     const total = await User.countDocuments(filter);
     
-    // Get users
+    // Get users with proper field selection
     const users = await User.find(filter)
-      .select('-refreshToken')
+      .select('-password -refreshToken -resetPasswordToken -verificationToken')
       .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(limit);
+      .limit(limit)
+      .lean();
     
     res.status(200).json({
       success: true,
@@ -52,6 +56,7 @@ export const getUsers = async (req: Request, res: Response, next: NextFunction):
       data: users,
     });
   } catch (error) {
+    console.error('Error getting users:', error);
     next(error);
   }
 };
@@ -71,7 +76,9 @@ export const getUser = async (req: Request, res: Response, next: NextFunction): 
       return;
     }
     
-    const user = await User.findById(userId).select('-refreshToken');
+    const user = await User.findById(userId)
+      .select('-password -refreshToken -resetPasswordToken -verificationToken')
+      .lean();
     
     if (!user) {
       next(new ErrorResponse('User not found', 404));
@@ -83,6 +90,7 @@ export const getUser = async (req: Request, res: Response, next: NextFunction): 
       data: user,
     });
   } catch (error) {
+    console.error('Error getting user:', error);
     next(error);
   }
 };
@@ -116,40 +124,61 @@ export const createUser = async (req: Request, res: Response, next: NextFunction
       res.status(400).json({
         success: false,
         errors: errors.array(),
+        message: 'Validation failed',
       });
       return;
     }
     
     // Check if user already exists
-    const existingUser = await User.findOne({ email: req.body.email });
+    const existingUser = await User.findOne({ email: req.body.email.toLowerCase() });
     
     if (existingUser) {
       next(new ErrorResponse('Email already in use', 400));
       return;
     }
     
-    // Create user
-    const user = await User.create({
-      name: req.body.name,
-      email: req.body.email,
+    // Create user with explicit password hashing
+    const userData = {
+      name: req.body.name.trim(),
+      email: req.body.email.toLowerCase().trim(),
       password: req.body.password,
       role: req.body.role || 'team_member',
       avatar: req.body.avatar,
-    });
+      isActive: true,
+      verified: true, // Auto-verify admin-created users
+    };
+    
+    console.log('Creating user with data:', { ...userData, password: '[REDACTED]' });
+    
+    const user = await User.create(userData);
+    
+    // Return user without sensitive data
+    const userResponse = {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      avatar: user.avatar,
+      isActive: user.isActive,
+      verified: user.verified,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+    };
+    
+    console.log('User created successfully:', userResponse);
     
     res.status(201).json({
       success: true,
-      data: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        avatar: user.avatar,
-        createdAt: user.createdAt,
-      },
+      data: userResponse,
+      message: 'User created successfully',
     });
-  } catch (error) {
-    next(error);
+  } catch (error: any) {
+    console.error('Error creating user:', error);
+    if (error.code === 11000) {
+      next(new ErrorResponse('Email already exists', 400));
+    } else {
+      next(error);
+    }
   }
 };
 
@@ -185,6 +214,7 @@ export const updateUser = async (req: Request, res: Response, next: NextFunction
       res.status(400).json({
         success: false,
         errors: errors.array(),
+        message: 'Validation failed',
       });
       return;
     }
@@ -198,8 +228,8 @@ export const updateUser = async (req: Request, res: Response, next: NextFunction
     }
     
     // Check if email is already taken
-    if (req.body.email && req.body.email !== user.email) {
-      const existingUser = await User.findOne({ email: req.body.email });
+    if (req.body.email && req.body.email.toLowerCase() !== user.email) {
+      const existingUser = await User.findOne({ email: req.body.email.toLowerCase() });
       
       if (existingUser) {
         next(new ErrorResponse('Email already in use', 400));
@@ -220,8 +250,8 @@ export const updateUser = async (req: Request, res: Response, next: NextFunction
     // Update user
     const fieldsToUpdate: any = {};
     
-    if (req.body.name) fieldsToUpdate.name = req.body.name;
-    if (req.body.email) fieldsToUpdate.email = req.body.email;
+    if (req.body.name) fieldsToUpdate.name = req.body.name.trim();
+    if (req.body.email) fieldsToUpdate.email = req.body.email.toLowerCase().trim();
     if (req.body.role) fieldsToUpdate.role = req.body.role;
     if (req.body.avatar) fieldsToUpdate.avatar = req.body.avatar;
     if (typeof req.body.isActive !== 'undefined') {
@@ -232,18 +262,28 @@ export const updateUser = async (req: Request, res: Response, next: NextFunction
       }
     }
     
+    console.log('Updating user with fields:', fieldsToUpdate);
+    
     const updatedUser = await User.findByIdAndUpdate(
       userId,
       fieldsToUpdate,
       { new: true, runValidators: true }
-    );
+    ).select('-password -refreshToken -resetPasswordToken -verificationToken');
+    
+    console.log('User updated successfully:', updatedUser);
     
     res.status(200).json({
       success: true,
       data: updatedUser,
+      message: 'User updated successfully',
     });
-  } catch (error) {
-    next(error);
+  } catch (error: any) {
+    console.error('Error updating user:', error);
+    if (error.code === 11000) {
+      next(new ErrorResponse('Email already exists', 400));
+    } else {
+      next(error);
+    }
   }
 };
 
@@ -276,25 +316,14 @@ export const deleteUser = async (req: Request, res: Response, next: NextFunction
       return;
     }
 
+    console.log(`Attempting to delete user: ${user.email} (ID: ${userId})`);
+
     try {
-      // The following operations should ideally be in a transaction if they were active.
-      // Since they are commented out, we can proceed without a transaction for now
-      // to fix the immediate issue.
-
-      // Delete user's tasks (references)
-      // await Task.updateMany({ assignedTo: userId }, { assignedTo: null });
-
-      // Delete user's team associations
-      // await Team.updateMany({ members: userId }, { $pull: { members: userId } });
-
-      // Delete user's notifications
-      // await Notification.deleteMany({ userId });
-
-      // Finally delete the user
-      await user.deleteOne();
+      // Delete the user
+      await User.findByIdAndDelete(userId);
 
       // Log the deletion
-      console.log(`User ${user.email} deleted by admin ${req.user?.email}`);
+      console.log(`User ${user.email} deleted successfully by admin ${req.user?.email}`);
       
       res.status(200).json({
         success: true,
@@ -347,25 +376,28 @@ export const resetPassword = async (req: Request, res: Response, next: NextFunct
     }
     
     // Check if user exists
-    const user = await User.findById(userId).select('+password');
+    const user = await User.findById(userId);
     
     if (!user) {
       next(new ErrorResponse('User not found', 404));
       return;
     }
     
-    // Update password
-    user.password = req.body.password;
+    console.log(`Resetting password for user: ${user.email} (ID: ${userId})`);
+    
+    // Hash the new password manually to ensure it's properly hashed
+    const saltRounds = config.bcryptSaltRounds || 12;
+    const hashedPassword = await bcrypt.hash(req.body.password, saltRounds);
     
     try {
-      await user.save();
+      // Update password directly in database
+      await User.findByIdAndUpdate(userId, {
+        password: hashedPassword,
+        refreshToken: undefined, // Invalidate any existing refresh tokens
+      });
       
       // Log the password change
-      console.log(`Password reset for user ${user.email} by admin ${req.user?.email}`);
-      
-      // Invalidate any existing refresh tokens
-      user.refreshToken = undefined;
-      await user.save();
+      console.log(`Password reset successfully for user ${user.email} by admin ${req.user?.email}`);
       
       res.status(200).json({
         success: true,
@@ -388,4 +420,4 @@ export default {
   updateUser,
   deleteUser,
   resetPassword,
-}; 
+};
