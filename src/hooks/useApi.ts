@@ -1,3 +1,4 @@
+
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { User } from '@/types/auth';
@@ -171,6 +172,101 @@ export const useCurrentUser = () => {
   });
 };
 
+// Teams management hooks
+export const useTeams = (params?: { page?: number; limit?: number }) => {
+  return useQuery({
+    queryKey: ['teams', params],
+    queryFn: async () => {
+      let query = supabase
+        .from('teams')
+        .select('*, leader:profiles!teams_leader_id_fkey(name, email)', { count: 'exact' });
+
+      const start = ((params?.page || 1) - 1) * (params?.limit || 10);
+      const end = start + (params?.limit || 10) - 1;
+      
+      query = query.range(start, end);
+
+      const { data, error, count } = await query;
+
+      if (error) throw error;
+
+      return {
+        data: data || [],
+        pagination: {
+          total: count || 0,
+          page: params?.page || 1,
+          limit: params?.limit || 10,
+          pages: Math.ceil((count || 0) / (params?.limit || 10))
+        }
+      };
+    },
+  });
+};
+
+export const useCreateTeam = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: async (teamData: { name: string; description?: string; leaderId: string }) => {
+      const { data, error } = await supabase
+        .from('teams')
+        .insert({
+          name: teamData.name,
+          description: teamData.description,
+          leader_id: teamData.leaderId,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['teams'] });
+    },
+  });
+};
+
+export const useUpdateTeam = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: async ({ teamId, teamData }: { teamId: string; teamData: any }) => {
+      const { data, error } = await supabase
+        .from('teams')
+        .update(teamData)
+        .eq('id', teamId)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['teams'] });
+    },
+  });
+};
+
+export const useDeleteTeam = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: async (teamId: string) => {
+      const { error } = await supabase
+        .from('teams')
+        .delete()
+        .eq('id', teamId);
+
+      if (error) throw error;
+      return { success: true };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['teams'] });
+    },
+  });
+};
+
 // Task management hooks
 export const useTasks = (filters?: any) => {
   return useQuery({
@@ -211,9 +307,9 @@ export const useTasks = (filters?: any) => {
         } : null,
         createdBy: {
           id: task.created_by,
-          name: task.created_by_profile.name,
-          email: task.created_by_profile.email,
-          avatar: task.created_by_profile.avatar,
+          name: task.created_by_profile?.name || 'Unknown',
+          email: task.created_by_profile?.email || '',
+          avatar: task.created_by_profile?.avatar || '',
         },
         teamId: task.team_id,
         tags: task.tags || [],
@@ -261,12 +357,187 @@ export const useCreateTask = () => {
   });
 };
 
-// Analytics hook (placeholder)
-export const useAnalytics = () => {
+export const useUpdateTask = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: async ({ taskId, taskData }: { taskId: string; taskData: UpdateTaskData }) => {
+      const { data, error } = await supabase
+        .from('tasks')
+        .update(taskData)
+        .eq('id', taskId)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+    },
+  });
+};
+
+export const useDeleteTask = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: async (taskId: string) => {
+      const { error } = await supabase
+        .from('tasks')
+        .delete()
+        .eq('id', taskId);
+
+      if (error) throw error;
+      return { success: true };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+    },
+  });
+};
+
+// Calendar events hooks
+export interface CalendarEventData {
+  id?: string;
+  title: string;
+  description?: string;
+  date: string;
+  time?: string;
+  duration?: number;
+  type: string;
+  priority?: string;
+  attendees?: string[];
+  teamId?: string;
+  taskId?: string;
+}
+
+export const useCalendarEvents = (filters?: any) => {
   return useQuery({
-    queryKey: ['analytics'],
+    queryKey: ['calendar-events', filters],
     queryFn: async () => {
-      // Placeholder analytics data
+      let query = supabase
+        .from('calendar_events')
+        .select('*');
+
+      if (filters?.startDate && filters?.endDate) {
+        query = query.gte('date', filters.startDate).lte('date', filters.endDate);
+      }
+
+      const { data, error } = await query;
+
+      if (error) throw error;
+
+      return data || [];
+    },
+  });
+};
+
+export const useCreateCalendarEvent = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: async (eventData: CalendarEventData) => {
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      
+      if (authError || !user) throw new Error('User not authenticated');
+
+      const { data, error } = await supabase
+        .from('calendar_events')
+        .insert({
+          title: eventData.title,
+          description: eventData.description,
+          date: eventData.date,
+          time: eventData.time,
+          duration: eventData.duration,
+          type: eventData.type,
+          priority: eventData.priority,
+          attendees: eventData.attendees,
+          team_id: eventData.teamId,
+          task_id: eventData.taskId,
+          assignee_id: user.id,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['calendar-events'] });
+    },
+  });
+};
+
+export const useUpdateCalendarEvent = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: async ({ eventId, eventData }: { eventId: string; eventData: Partial<CalendarEventData> }) => {
+      const { data, error } = await supabase
+        .from('calendar_events')
+        .update(eventData)
+        .eq('id', eventId)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['calendar-events'] });
+    },
+  });
+};
+
+export const useDeleteCalendarEvent = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: async (eventId: string) => {
+      const { error } = await supabase
+        .from('calendar_events')
+        .delete()
+        .eq('id', eventId);
+
+      if (error) throw error;
+      return { success: true };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['calendar-events'] });
+    },
+  });
+};
+
+export const useTasksAsEvents = () => {
+  return useQuery({
+    queryKey: ['tasks-as-events'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('tasks')
+        .select('*')
+        .not('due_date', 'is', null);
+
+      if (error) throw error;
+
+      return data?.map(task => ({
+        id: task.id,
+        title: task.title,
+        date: task.due_date,
+        type: 'task',
+        priority: task.priority,
+        status: task.status,
+      })) || [];
+    },
+  });
+};
+
+// Analytics hook
+export const useAnalytics = (params?: { timeframe?: string }) => {
+  return useQuery({
+    queryKey: ['analytics', params],
+    queryFn: async () => {
+      // For now, return mock data since we don't have analytics tables yet
       return {
         activeUsers: 0,
         totalUsers: 0,
