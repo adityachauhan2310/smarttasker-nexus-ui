@@ -1,100 +1,120 @@
 
-import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
+import { supabase } from '@/integrations/supabase/client';
+
+export interface ApiResponse<T> {
+  success: boolean;
+  data?: T;
+  message?: string;
+  errors?: Record<string, string[]>;
+}
+
+export interface PaginatedApiResponse<T> {
+  success: boolean;
+  data: T;
+  pagination?: {
+    total: number;
+    page: number;
+    limit: number;
+    pages: number;
+  };
+  message?: string;
+}
 
 class ApiClient {
-  private instance: AxiosInstance;
-  private token: string | null = null;
-
-  constructor() {
-    // Use Supabase edge functions URL for API calls
-    const baseURL = 'https://syoqzjwyvegytdxfchil.supabase.co/functions/v1';
+  async get<T = any>(endpoint: string, params?: Record<string, any>): Promise<{ data: T }> {
+    console.log('API Request:', 'GET', endpoint, params);
     
-    this.instance = axios.create({
-      baseURL,
-      timeout: 30000,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      withCredentials: false, // Supabase doesn't use cookies for auth
-    });
-
-    // Request interceptor to add auth token
-    this.instance.interceptors.request.use(
-      (config) => {
-        if (this.token) {
-          config.headers.Authorization = `Bearer ${this.token}`;
-        }
-        console.log('API Request:', config.method?.toUpperCase(), config.url, config.data);
-        return config;
-      },
-      (error) => {
-        console.error('Request error:', error);
-        return Promise.reject(error);
-      }
-    );
-
-    // Response interceptor for logging and error handling
-    this.instance.interceptors.response.use(
-      (response: AxiosResponse) => {
-        console.log('API Response:', response.status, response.config.url, response.data);
-        return response;
-      },
-      (error) => {
-        console.error('Response error:', error.response?.status, error.response?.data || error.message);
-        
-        if (error.response?.status === 401) {
-          // Token expired or invalid
-          this.clearAuthToken();
-          window.location.href = '/signin';
-        }
-        
-        return Promise.reject(error);
-      }
-    );
-
-    // Try to restore token from localStorage
-    const savedToken = localStorage.getItem('auth_token');
-    if (savedToken) {
-      this.token = savedToken;
+    // Handle different API endpoints
+    if (endpoint === '/users') {
+      const { data, error, count } = await supabase
+        .from('profiles')
+        .select('*', { count: 'exact' })
+        .range((params?.page - 1) * (params?.limit || 10), params?.page * (params?.limit || 10) - 1);
+      
+      if (error) throw error;
+      
+      return {
+        data: {
+          data: data || [],
+          pagination: {
+            total: count || 0,
+            page: params?.page || 1,
+            limit: params?.limit || 10,
+            pages: Math.ceil((count || 0) / (params?.limit || 10))
+          }
+        } as T
+      };
     }
+    
+    // Add other endpoint handlers as needed
+    throw new Error(`Endpoint ${endpoint} not implemented yet`);
   }
 
-  setAuthToken(token: string): void {
-    this.token = token;
-    localStorage.setItem('auth_token', token);
+  async post<T = any>(endpoint: string, data?: any): Promise<{ data: T }> {
+    console.log('API Request:', 'POST', endpoint, data);
+    
+    if (endpoint === '/users') {
+      const { data: result, error } = await supabase.auth.admin.createUser({
+        email: data.email,
+        password: data.password,
+        user_metadata: {
+          name: data.name,
+          role: data.role
+        }
+      });
+      
+      if (error) throw error;
+      
+      return { data: result as T };
+    }
+    
+    throw new Error(`Endpoint ${endpoint} not implemented yet`);
   }
 
-  clearAuthToken(): void {
-    this.token = null;
-    localStorage.removeItem('auth_token');
+  async put<T = any>(endpoint: string, data?: any): Promise<{ data: T }> {
+    console.log('API Request:', 'PUT', endpoint, data);
+    
+    if (endpoint.startsWith('/users/') && endpoint.endsWith('/reset-password')) {
+      const userId = endpoint.split('/')[2];
+      const { data: result, error } = await supabase.auth.admin.updateUserById(userId, {
+        password: data.password
+      });
+      
+      if (error) throw error;
+      
+      return { data: result as T };
+    }
+    
+    if (endpoint.startsWith('/users/')) {
+      const userId = endpoint.split('/')[2];
+      const { data: result, error } = await supabase
+        .from('profiles')
+        .update(data)
+        .eq('id', userId)
+        .select()
+        .single();
+      
+      if (error) throw error;
+      
+      return { data: result as T };
+    }
+    
+    throw new Error(`Endpoint ${endpoint} not implemented yet`);
   }
 
-  getConfig(): { baseURL: string | undefined; withCredentials: boolean } {
-    return {
-      baseURL: this.instance.defaults.baseURL,
-      withCredentials: this.instance.defaults.withCredentials || false,
-    };
-  }
-
-  // HTTP Methods
-  async get<T = any>(url: string, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> {
-    return this.instance.get<T>(url, config);
-  }
-
-  async post<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> {
-    return this.instance.post<T>(url, data, config);
-  }
-
-  async put<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> {
-    return this.instance.put<T>(url, data, config);
-  }
-
-  async patch<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> {
-    return this.instance.patch<T>(url, data, config);
-  }
-
-  async delete<T = any>(url: string, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> {
-    return this.instance.delete<T>(url, config);
+  async delete<T = any>(endpoint: string): Promise<{ data: T }> {
+    console.log('API Request:', 'DELETE', endpoint);
+    
+    if (endpoint.startsWith('/users/')) {
+      const userId = endpoint.split('/')[2];
+      const { error } = await supabase.auth.admin.deleteUser(userId);
+      
+      if (error) throw error;
+      
+      return { data: {} as T };
+    }
+    
+    throw new Error(`Endpoint ${endpoint} not implemented yet`);
   }
 }
 

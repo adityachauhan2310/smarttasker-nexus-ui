@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -9,20 +10,16 @@ interface ProtectedRouteProps {
   redirectTo?: string;
 }
 
-/**
- * Protected Route Component
- * Handles authentication and role-based access control
- */
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   children,
   requiredRole,
   redirectTo = '/signin',
 }) => {
-  const { user, loading, hasPermission } = useAuth();
+  const { user, isLoading, isAuthenticated } = useAuth();
   const location = useLocation();
 
   // Show loading state while checking authentication
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex justify-center items-center h-screen">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -32,13 +29,13 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   }
 
   // If not authenticated, redirect to login page
-  if (!user) {
+  if (!isAuthenticated || !user) {
     console.log("User not authenticated, redirecting to", redirectTo);
     return <Navigate to={redirectTo} state={{ from: location }} replace />;
   }
 
   // Check role-based permissions
-  if (requiredRole && !hasPermission(requiredRole)) {
+  if (requiredRole && user.role !== requiredRole && user.role !== 'admin') {
     console.log(`User doesn't have required role: ${requiredRole}, redirecting to /unauthorized`);
     return <Navigate to="/unauthorized" replace />;
   }
@@ -47,4 +44,4 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   return <>{children}</>;
 };
 
-export default ProtectedRoute; 
+export default ProtectedRoute;

@@ -1,6 +1,6 @@
 
 export interface User {
-  id: string; // Changed from _id to id for Supabase
+  id: string;
   name: string;
   email: string;
   role: 'admin' | 'team_leader' | 'team_member';
@@ -10,6 +10,7 @@ export interface User {
   notificationPreferences?: Record<string, any>;
   createdAt?: string;
   updatedAt?: string;
+  lastLogin?: string;
 }
 
 export interface AuthContextType {

@@ -1,14 +1,14 @@
+
 import React, { useState } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { UserPlus, Mail, User, Shield, Loader2, Eye, EyeOff } from 'lucide-react';
-import { useCreateUser } from '@/hooks/useApi';
+import { Loader2, Eye, EyeOff, UserPlus } from 'lucide-react';
+import { z } from 'zod';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import * as z from 'zod';
 import {
   Form,
   FormControl,
@@ -17,30 +17,29 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-
-// Form schema validation
-const formSchema = z.object({
-  name: z.string().min(2, { message: 'Name must be at least 2 characters' }),
-  email: z.string().email({ message: 'Please enter a valid email' }),
-  password: z.string().min(6, { message: 'Password must be at least 6 characters' }),
-  role: z.enum(['admin', 'team_leader', 'team_member']),
-  department: z.string().optional(),
-});
-
-type FormValues = z.infer<typeof formSchema>;
+import { useCreateUser } from '@/hooks/useApi';
+import { toast as sonnerToast } from 'sonner';
 
 interface AddUserModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-const AddUserModal: React.FC<AddUserModalProps> = ({
-  isOpen,
-  onClose,
-}) => {
-  const createUserMutation = useCreateUser();
+const formSchema = z.object({
+  name: z.string().min(1, { message: 'Name is required' }),
+  email: z.string().email({ message: 'Invalid email address' }),
+  password: z.string().min(6, { message: 'Password must be at least 6 characters' }),
+  role: z.enum(['admin', 'team_leader', 'team_member'], {
+    required_error: 'Please select a role',
+  }),
+});
+
+type FormValues = z.infer<typeof formSchema>;
+
+const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose }) => {
   const [showPassword, setShowPassword] = useState(false);
-  
+  const createUserMutation = useCreateUser();
+
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -48,17 +47,21 @@ const AddUserModal: React.FC<AddUserModalProps> = ({
       email: '',
       password: '',
       role: 'team_member',
-      department: '',
     },
   });
 
   const onSubmit = async (values: FormValues) => {
     try {
+      sonnerToast.loading("Creating user...");
       await createUserMutation.mutateAsync(values);
+      sonnerToast.dismiss();
+      sonnerToast.success("User created successfully");
       form.reset();
       onClose();
-    } catch (error) {
-      console.error('Failed to create user:', error);
+    } catch (error: any) {
+      console.error('Error creating user:', error);
+      sonnerToast.dismiss();
+      sonnerToast.error(`Failed to create user: ${error.message}`);
     }
   };
 
@@ -66,6 +69,7 @@ const AddUserModal: React.FC<AddUserModalProps> = ({
     <Dialog open={isOpen} onOpenChange={(open) => {
       if (!open) {
         onClose();
+        form.reset();
       }
     }}>
       <DialogContent className="sm:max-w-[425px]">
@@ -75,7 +79,7 @@ const AddUserModal: React.FC<AddUserModalProps> = ({
             <span>Add New User</span>
           </DialogTitle>
           <DialogDescription>
-            Create a new user account and assign their role
+            Create a new user account with the specified role and permissions.
           </DialogDescription>
         </DialogHeader>
         
@@ -88,27 +92,27 @@ const AddUserModal: React.FC<AddUserModalProps> = ({
                 <FormItem>
                   <FormLabel>Full Name</FormLabel>
                   <FormControl>
-                    <Input placeholder="Enter full name" {...field} />
+                    <Input placeholder="John Doe" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
             />
-            
+
             <FormField
               control={form.control}
               name="email"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Email Address</FormLabel>
+                  <FormLabel>Email</FormLabel>
                   <FormControl>
-                    <Input type="email" placeholder="user@smarttasker.ai" {...field} />
+                    <Input type="email" placeholder="john@example.com" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
             />
-            
+
             <FormField
               control={form.control}
               name="password"
@@ -141,54 +145,38 @@ const AddUserModal: React.FC<AddUserModalProps> = ({
                 </FormItem>
               )}
             />
-            
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="role"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Role</FormLabel>
-                    <Select 
-                      onValueChange={field.onChange} 
-                      defaultValue={field.value}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select role" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="admin">Admin</SelectItem>
-                        <SelectItem value="team_leader">Team Leader</SelectItem>
-                        <SelectItem value="team_member">Team Member</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              
-              <FormField
-                control={form.control}
-                name="department"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Department</FormLabel>
+
+            <FormField
+              control={form.control}
+              name="role"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Role</FormLabel>
+                  <Select onValueChange={field.onChange} defaultValue={field.value}>
                     <FormControl>
-                      <Input placeholder="e.g., Engineering" {...field} />
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a role" />
+                      </SelectTrigger>
                     </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
+                    <SelectContent>
+                      <SelectItem value="admin">Admin</SelectItem>
+                      <SelectItem value="team_leader">Team Leader</SelectItem>
+                      <SelectItem value="team_member">Team Member</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
             
             <div className="flex justify-end space-x-2 pt-4">
               <Button 
                 type="button" 
                 variant="outline" 
-                onClick={onClose}
+                onClick={() => {
+                  onClose();
+                  form.reset();
+                }}
                 disabled={createUserMutation.isPending}
               >
                 Cancel

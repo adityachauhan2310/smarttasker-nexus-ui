@@ -9,10 +9,10 @@ interface ProtectedRouteProps {
 }
 
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requiredRole }) => {
-  const { user, loading, hasPermission } = useAuth();
+  const { user, isLoading, isAuthenticated } = useAuth();
   const location = useLocation();
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
         <div className="text-center space-y-4">
@@ -23,11 +23,11 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requiredRole 
     );
   }
 
-  if (!user) {
+  if (!isAuthenticated || !user) {
     return <Navigate to="/signin" state={{ from: location }} replace />;
   }
 
-  if (requiredRole && !hasPermission(requiredRole)) {
+  if (requiredRole && user.role !== requiredRole && user.role !== 'admin') {
     return <Navigate to="/dashboard" replace />;
   }
 

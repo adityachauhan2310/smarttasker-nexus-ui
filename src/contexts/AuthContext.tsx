@@ -35,11 +35,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
               id: profile.id,
               name: profile.name,
               email: session.user.email || '',
-              role: profile.role,
+              role: profile.role as 'admin' | 'team_leader' | 'team_member',
               avatar: profile.avatar,
               isActive: profile.is_active,
               teamId: profile.team_id,
-              notificationPreferences: profile.notification_preferences,
+              notificationPreferences: profile.notification_preferences as Record<string, any>,
               createdAt: profile.created_at,
               updatedAt: profile.updated_at,
             });
