@@ -1,138 +1,133 @@
-import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { supabase } from '@/integrations/supabase/client';
 import { User, AuthContextType } from '../types/auth';
-import apiClient from '../client/api/apiClient';
-import { useLogin, useCurrentUser, useLogout } from '../hooks/useApi';
-import { ApiResponse, LoginResponse, UserResponse } from '../types/api';
+import { Session } from '@supabase/supabase-js';
 
-// Create a default value for AuthContext to avoid providing undefined
-const defaultContextValue: AuthContextType = {
-  user: null,
-  loading: true,
-  login: async () => { throw new Error('Not implemented'); },
-  logout: () => {},
-  hasPermission: () => false,
-};
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const AuthContext = createContext<AuthContextType>(defaultContextValue);
+interface AuthProviderProps {
+  children: ReactNode;
+}
 
-export const useAuth = () => {
-  return useContext(AuthContext);
-};
-
-export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  console.log("Rendering AuthProvider");
-  
-  // State
+export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [refreshAttempts, setRefreshAttempts] = useState<number>(0);
-  
-  // Initialize React Query client
-  const queryClient = useQueryClient();
-  
-  // React Query hooks with minimal configuration
-  const loginMutation = useLogin();
-  const logoutMutation = useLogout();
-  const { refetch: fetchUser, isError: userFetchError } = useCurrentUser({ 
-    queryKey: ['currentUser'],
-    enabled: false,
-    retry: 3,
-    retryDelay: 1000,
-    staleTime: 5 * 60 * 1000, // 5 minutes
-  });
-  
-  // Check auth status on mount and whenever refreshAttempts changes
+  const [session, setSession] = useState<Session | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
   useEffect(() => {
-    const checkAuthStatus = async () => {
-      setLoading(true);
-      // We rely on the apiClient to have restored the token from storage
-      // on initialization.
-      const hasToken = apiClient.restoreAuthToken();
-
-      if (hasToken) {
-        try {
-          // fetch user, but don't cause a logout if it fails initially.
-          // The interceptor will handle token refresh on 401s for subsequent requests.
-          const response = await fetchUser();
-          if (response.data?.data?.user) {
-            setUser(response.data.data.user);
-          } else {
-            // If we got a response but no user, try to refresh the token
-            const refreshed = await apiClient.refreshToken();
-            if (refreshed && refreshAttempts < 3) {
-              setRefreshAttempts(prev => prev + 1);
-            }
+    // Set up auth state listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        console.log('Auth state changed:', event, session);
+        setSession(session);
+        
+        if (session?.user) {
+          // Fetch user profile from our profiles table
+          const { data: profile, error } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', session.user.id)
+            .single();
+          
+          if (profile && !error) {
+            setUser({
+              id: profile.id,
+              name: profile.name,
+              email: session.user.email || '',
+              role: profile.role,
+              avatar: profile.avatar,
+              isActive: profile.is_active,
+              teamId: profile.team_id,
+              notificationPreferences: profile.notification_preferences,
+              createdAt: profile.created_at,
+              updatedAt: profile.updated_at,
+            });
           }
-        } catch (error) {
-          console.error("Failed to fetch user on initial load:", error);
-          // Try to refresh the token if fetch fails
-          const refreshed = await apiClient.refreshToken();
-          if (refreshed && refreshAttempts < 3) {
-            setRefreshAttempts(prev => prev + 1);
-          }
+        } else {
+          setUser(null);
         }
+        
+        setIsLoading(false);
       }
-      setLoading(false);
-    };
+    );
 
-    checkAuthStatus();
-  }, [fetchUser, refreshAttempts]);
-  
-  // Login function
-  const login = useCallback(async (email: string, password: string) => {
-    try {
-      const result = await loginMutation.mutateAsync({ email, password });
-      
-      if (result?.data?.user) {
-        setUser(result.data.user);
-        return result.data.user;
+    // Check for existing session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      if (!session) {
+        setIsLoading(false);
       }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
+    try {
+      setIsLoading(true);
       
-      throw new Error("Invalid response from server");
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) {
+        console.error('Login error:', error);
+        return {
+          success: false,
+          error: error.message,
+        };
+      }
+
+      if (data.user) {
+        return { success: true };
+      }
+
+      return {
+        success: false,
+        error: 'Login failed - no user returned',
+      };
     } catch (error: any) {
-      console.error("Login error:", error);
-      throw error;
+      console.error('Login exception:', error);
+      return {
+        success: false,
+        error: error.message || 'An unexpected error occurred',
+      };
+    } finally {
+      setIsLoading(false);
     }
-  }, [loginMutation]);
-  
-  // Logout function
-  const logout = useCallback(() => {
-    logoutMutation.mutate();
-    setUser(null);
-    apiClient.clearAuthToken(); // Ensure token is cleared
-    // Clear React Query cache on logout
-    queryClient.clear();
-  }, [logoutMutation, queryClient]);
-  
-  // Permission check
-  const hasPermission = useCallback((requiredRole?: string) => {
-    if (!user || !requiredRole) return false;
-    
-    const roleHierarchy: Record<string, number> = {
-      admin: 3,
-      team_leader: 2,
-      team_member: 1,
-    };
-    
-    const userLevel = roleHierarchy[user.role] || 0;
-    const requiredLevel = roleHierarchy[requiredRole] || 0;
-    
-    return userLevel >= requiredLevel;
-  }, [user]);
-  
-  // Create context value object with useMemo to prevent unnecessary re-renders
-  const contextValue = useMemo(() => ({
+  };
+
+  const logout = async (): Promise<void> => {
+    try {
+      await supabase.auth.signOut();
+      setUser(null);
+      setSession(null);
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
+  };
+
+  const value: AuthContextType = {
     user,
-    loading,
     login,
     logout,
-    hasPermission
-  }), [user, loading, login, logout, hasPermission]);
-  
+    isLoading,
+    isAuthenticated: !!user && !!session,
+  };
+
   return (
-    <AuthContext.Provider value={contextValue}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );
+};
+
+export const useAuth = (): AuthContextType => {
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
 };

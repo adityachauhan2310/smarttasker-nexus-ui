@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient, UseQueryOptions, UseMutationOptions } from '@tanstack/react-query';
-import apiClient from '../client/api/apiClient';
+import { supabase } from '@/integrations/supabase/client';
 import { useToast } from './use-toast';
 import {
   ApiResponse,
@@ -988,4 +988,4 @@ export default {
   useAnalytics,
   useTasks,
   useTasksAsEvents,
-}; 
+};

@@ -1,41 +1,63 @@
 
-export type TaskStatus = 'todo' | 'in_progress' | 'in_review' | 'completed';
-export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent';
-
 export interface Task {
-  id: string;
+  id: string; // Changed from _id to id for Supabase
   title: string;
   description: string;
-  status: TaskStatus;
-  priority: TaskPriority;
-  assigneeId?: string;
-  assigneeName?: string;
-  assigneeAvatar?: string;
-  createdBy: string;
-  createdByName: string;
+  status: 'pending' | 'in_progress' | 'completed';
+  priority: 'low' | 'medium' | 'high' | 'urgent';
   dueDate?: string;
+  assignee?: {
+    id: string; // Changed from _id to id
+    name: string;
+    email: string;
+    avatar?: string;
+  } | null;
+  assigneeName?: string;
+  createdBy: {
+    id: string; // Changed from _id to id
+    name: string;
+    email: string;
+    avatar?: string;
+  };
+  createdByName?: string;
+  teamId?: string;
+  tags: string[];
+  estimatedTime?: number;
+  actualTime?: number;
+  completedAt?: string;
   createdAt: string;
   updatedAt: string;
-  tags: string[];
-  comments: TaskComment[];
-  attachments: TaskAttachment[];
 }
 
-export interface TaskComment {
-  id: string;
-  content: string;
-  authorId: string;
-  authorName: string;
-  authorAvatar?: string;
-  createdAt: string;
+export interface TaskFilters {
+  status?: string;
+  priority?: string;
+  assignee?: string;
+  search?: string;
+  startDate?: string;
+  endDate?: string;
 }
 
-export interface TaskAttachment {
-  id: string;
-  filename: string;
-  url: string;
-  size: number;
-  type: string;
-  uploadedBy: string;
-  uploadedAt: string;
+export interface CreateTaskData {
+  title: string;
+  description?: string;
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+  dueDate?: string;
+  assignedTo?: string;
+  teamId?: string;
+  tags?: string[];
+  estimatedTime?: number;
+}
+
+export interface UpdateTaskData {
+  title?: string;
+  description?: string;
+  status?: 'pending' | 'in_progress' | 'completed';
+  priority?: 'low' | 'medium' | 'high' | 'urgent';
+  dueDate?: string;
+  assignedTo?: string;
+  teamId?: string;
+  tags?: string[];
+  estimatedTime?: number;
+  actualTime?: number;
 }

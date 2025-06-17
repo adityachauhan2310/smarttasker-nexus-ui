@@ -3,21 +3,10 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
-import cookieParser from 'cookie-parser';
-import connectDB from './config/database';
 import config from './config/config';
 import { errorHandler } from './middleware/errorMiddleware';
 
-// Import routes
-import authRoutes from './routes/authRoutes';
-import userRoutes from './routes/userRoutes';
-import taskRoutes from './routes/taskRoutes';
-import teamRoutes from './routes/teamRoutes';
-
 const app = express();
-
-// Connect to database
-connectDB();
 
 // Middleware
 app.use(helmet({
@@ -34,7 +23,6 @@ app.use(cors({
 app.use(morgan('combined'));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
-app.use(cookieParser());
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -42,14 +30,18 @@ app.get('/health', (req, res) => {
     status: 'OK',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
+    database: 'Supabase',
   });
 });
 
-// API Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/users', userRoutes);
-app.use('/api/tasks', taskRoutes);
-app.use('/api/teams', teamRoutes);
+// Redirect all API requests to Supabase Edge Functions
+app.use('/api/*', (req, res) => {
+  res.status(200).json({
+    message: 'API requests are now handled by Supabase Edge Functions',
+    supabaseUrl: config.supabaseUrl,
+    endpoint: `${config.supabaseUrl}/functions/v1${req.path.replace('/api', '')}`,
+  });
+});
 
 // Error handling middleware
 app.use(errorHandler);
@@ -58,7 +50,7 @@ app.use(errorHandler);
 app.use('*', (req, res) => {
   res.status(404).json({
     success: false,
-    message: `Route ${req.originalUrl} not found`,
+    message: `Route ${req.originalUrl} not found - API is now handled by Supabase`,
   });
 });
 
@@ -66,6 +58,8 @@ const PORT = config.port || 5000;
 
 const server = app.listen(PORT, () => {
   console.log(`Server running in ${config.nodeEnv} mode on port ${PORT}`);
+  console.log('Database: Supabase');
+  console.log('API: Supabase Edge Functions');
 });
 
 // Handle unhandled promise rejections
