@@ -11,10 +11,10 @@ export const useUsers = (params?: { page?: number; limit?: number; search?: stri
     queryFn: async () => {
       let query = supabase
         .from('profiles')
-        .select('*', { count: 'exact' });
+        .select('*, email:auth.users(email)', { count: 'exact' });
 
       if (params?.search) {
-        query = query.or(`name.ilike.%${params.search}%,email.ilike.%${params.search}%`);
+        query = query.or(`name.ilike.%${params.search}%`);
       }
 
       if (params?.role) {
@@ -31,7 +31,18 @@ export const useUsers = (params?: { page?: number; limit?: number; search?: stri
       if (error) throw error;
 
       return {
-        data: data || [],
+        data: data?.map(profile => ({
+          id: profile.id,
+          name: profile.name,
+          email: profile.email?.email || '',
+          role: profile.role,
+          avatar: profile.avatar,
+          isActive: profile.is_active,
+          teamId: profile.team_id,
+          notificationPreferences: profile.notification_preferences,
+          createdAt: profile.created_at,
+          updatedAt: profile.updated_at,
+        })) || [],
         pagination: {
           total: count || 0,
           page: params?.page || 1,
@@ -62,7 +73,7 @@ export const useCreateUser = () => {
       if (data.user) {
         const { error: profileError } = await supabase
           .from('profiles')
-          .update({ role: userData.role })
+          .update({ role: userData.role, name: userData.name })
           .eq('id', data.user.id);
 
         if (profileError) throw profileError;
@@ -179,7 +190,7 @@ export const useTeams = (params?: { page?: number; limit?: number }) => {
     queryFn: async () => {
       let query = supabase
         .from('teams')
-        .select('*, leader:profiles!teams_leader_id_fkey(name, email)', { count: 'exact' });
+        .select('*, leader:profiles!teams_leader_id_fkey(name)', { count: 'exact' });
 
       const start = ((params?.page || 1) - 1) * (params?.limit || 10);
       const end = start + (params?.limit || 10) - 1;
@@ -274,11 +285,7 @@ export const useTasks = (filters?: any) => {
     queryFn: async () => {
       let query = supabase
         .from('tasks')
-        .select(`
-          *,
-          assigned_to_profile:profiles!tasks_assigned_to_fkey(name, email, avatar),
-          created_by_profile:profiles!tasks_created_by_fkey(name, email, avatar)
-        `);
+        .select('*');
 
       if (filters?.status) {
         query = query.eq('status', filters.status);
@@ -299,17 +306,17 @@ export const useTasks = (filters?: any) => {
         status: task.status,
         priority: task.priority,
         dueDate: task.due_date,
-        assignee: task.assigned_to_profile ? {
+        assignee: task.assigned_to ? {
           id: task.assigned_to,
-          name: task.assigned_to_profile.name,
-          email: task.assigned_to_profile.email,
-          avatar: task.assigned_to_profile.avatar,
+          name: 'Unknown',
+          email: '',
+          avatar: '',
         } : null,
         createdBy: {
           id: task.created_by,
-          name: task.created_by_profile?.name || 'Unknown',
-          email: task.created_by_profile?.email || '',
-          avatar: task.created_by_profile?.avatar || '',
+          name: 'Unknown',
+          email: '',
+          avatar: '',
         },
         teamId: task.team_id,
         tags: task.tags || [],

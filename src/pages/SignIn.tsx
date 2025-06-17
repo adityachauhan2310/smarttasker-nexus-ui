@@ -45,8 +45,16 @@ const SignIn = () => {
   // Redirect if already authenticated
   useEffect(() => {
     if (isAuthenticated && user) {
-      const from = location.state?.from?.pathname || '/dashboard';
-      navigate(from, { replace: true });
+      const from = location.state?.from?.pathname;
+      
+      // Redirect based on user role
+      if (user.role === 'admin') {
+        navigate(from || '/admin/dashboard', { replace: true });
+      } else if (user.role === 'team_leader') {
+        navigate(from || '/team-leader/dashboard', { replace: true });
+      } else {
+        navigate(from || '/team-member/dashboard', { replace: true });
+      }
     }
   }, [isAuthenticated, user, navigate, location.state]);
 
