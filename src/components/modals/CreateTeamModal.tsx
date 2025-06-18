@@ -17,14 +17,7 @@ import {
   FormMessage,
   FormDescription,
 } from '@/components/ui/form';
-import { Building, Loader2, Users, UserCheck } from 'lucide-react';
-import { 
-  Select, 
-  SelectContent, 
-  SelectItem, 
-  SelectTrigger, 
-  SelectValue 
-} from '@/components/ui/select';
+import { Building, Loader2, UserCheck } from 'lucide-react';
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { toast } from 'sonner';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -49,11 +42,11 @@ const CreateTeamModal: React.FC<CreateTeamModalProps> = ({
   const createTeamMutation = useCreateTeam();
   const [selectedLeader, setSelectedLeader] = React.useState<string | null>(null);
   
-  const { data: usersData, isLoading: isLoadingUsers, refetch: refetchUsers } = useUsers({
+  const { data: usersResponse, isLoading: isLoadingUsers, refetch: refetchUsers } = useUsers({
     limit: 100
   });
 
-  const users = usersData?.data || [];
+  const users = usersResponse?.data || [];
   
   React.useEffect(() => {
     if (isOpen) {
