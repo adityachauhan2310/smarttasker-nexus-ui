@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, Eye, EyeOff, LogIn, Bot } from 'lucide-react';
+import { Loader2, Eye, EyeOff, LogIn, Bot, Shield, Users, Zap } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { z } from 'zod';
 import { useForm } from 'react-hook-form';
@@ -71,43 +71,65 @@ const SignIn = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center p-4">
-      {/* Background Pattern */}
-      <div className="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg width="60" height="60" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg"%3E%3Cg fill="none" fill-rule="evenodd"%3E%3Cg fill="%239C92AC" fill-opacity="0.05"%3E%3Ccircle cx="30" cy="30" r="3"/%3E%3C/g%3E%3C/g%3E%3C/svg%3E')] opacity-20"></div>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 flex items-center justify-center p-4">
+      {/* Animated Background Elements */}
+      <div className="absolute inset-0 overflow-hidden">
+        <div className="absolute -top-40 -right-40 w-80 h-80 bg-purple-300 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob"></div>
+        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-yellow-300 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob animation-delay-2000"></div>
+        <div className="absolute top-40 left-40 w-80 h-80 bg-pink-300 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob animation-delay-4000"></div>
+      </div>
       
       <div className="w-full max-w-md relative z-10">
         {/* Header */}
         <div className="text-center mb-8">
-          <div className="flex items-center justify-center mb-4">
-            <div className="w-12 h-12 bg-gradient-to-r from-purple-500 to-blue-500 rounded-lg flex items-center justify-center">
-              <Bot className="h-7 w-7 text-white" />
+          <div className="flex items-center justify-center mb-6">
+            <div className="relative">
+              <div className="w-16 h-16 bg-gradient-to-r from-blue-600 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg">
+                <Bot className="h-8 w-8 text-white" />
+              </div>
+              <div className="absolute -top-1 -right-1 w-6 h-6 bg-green-400 rounded-full flex items-center justify-center">
+                <Zap className="h-3 w-3 text-white" />
+              </div>
             </div>
           </div>
-          <h1 className="text-3xl font-bold text-white mb-2">SmartTasker AI</h1>
-          <p className="text-gray-300 text-sm">Intelligent Task Management Platform</p>
-          <div className="flex items-center justify-center gap-4 mt-4">
-            <span className="px-3 py-1 bg-purple-500/20 text-purple-300 rounded-full text-xs">AI Powered</span>
-            <span className="px-3 py-1 bg-blue-500/20 text-blue-300 rounded-full text-xs">Secure</span>
-            <span className="px-3 py-1 bg-green-500/20 text-green-300 rounded-full text-xs">Enterprise</span>
+          <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-2">
+            SmartTasker AI
+          </h1>
+          <p className="text-gray-600 text-lg mb-6">Intelligent Task Management Platform</p>
+          
+          {/* Feature Pills */}
+          <div className="flex items-center justify-center gap-3 mb-6 flex-wrap">
+            <div className="flex items-center gap-2 px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium">
+              <Bot className="h-4 w-4" />
+              AI Powered
+            </div>
+            <div className="flex items-center gap-2 px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium">
+              <Shield className="h-4 w-4" />
+              Secure
+            </div>
+            <div className="flex items-center gap-2 px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm font-medium">
+              <Users className="h-4 w-4" />
+              Team Ready
+            </div>
           </div>
         </div>
 
         {/* Login Card */}
-        <Card className="bg-white/10 backdrop-blur-md border-white/20 shadow-2xl">
+        <Card className="bg-white/80 backdrop-blur-lg border-0 shadow-2xl ring-1 ring-gray-200/50">
           <CardHeader className="text-center pb-6">
-            <CardTitle className="text-2xl font-bold text-white flex items-center justify-center gap-2">
-              <LogIn className="h-5 w-5" />
+            <CardTitle className="text-2xl font-bold text-gray-800 flex items-center justify-center gap-2">
+              <LogIn className="h-5 w-5 text-blue-600" />
               Welcome Back
             </CardTitle>
-            <CardDescription className="text-gray-300">
+            <CardDescription className="text-gray-600 text-base">
               Sign in to access your workspace
             </CardDescription>
           </CardHeader>
           
           <CardContent>
             {error && (
-              <Alert className="mb-6 border-red-500/50 bg-red-500/10 text-red-300">
-                <AlertDescription>{error}</AlertDescription>
+              <Alert className="mb-6 border-red-200 bg-red-50 text-red-800">
+                <AlertDescription className="font-medium">{error}</AlertDescription>
               </Alert>
             )}
 
@@ -118,16 +140,16 @@ const SignIn = () => {
                   name="email"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="text-white">Email</FormLabel>
+                      <FormLabel className="text-gray-700 font-medium">Email Address</FormLabel>
                       <FormControl>
                         <Input
                           type="email"
                           placeholder="Enter your email"
-                          className="bg-white/10 border-white/20 text-white placeholder:text-gray-400 focus:border-purple-400 focus:ring-purple-400/20"
+                          className="h-12 bg-gray-50 border-gray-200 text-gray-900 placeholder:text-gray-500 focus:border-blue-500 focus:ring-blue-500/20 rounded-lg"
                           {...field}
                         />
                       </FormControl>
-                      <FormMessage className="text-red-300" />
+                      <FormMessage className="text-red-500" />
                     </FormItem>
                   )}
                 />
@@ -137,13 +159,13 @@ const SignIn = () => {
                   name="password"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="text-white">Password</FormLabel>
+                      <FormLabel className="text-gray-700 font-medium">Password</FormLabel>
                       <div className="relative">
                         <FormControl>
                           <Input
                             type={showPassword ? 'text' : 'password'}
                             placeholder="Enter your password"
-                            className="bg-white/10 border-white/20 text-white placeholder:text-gray-400 focus:border-purple-400 focus:ring-purple-400/20 pr-12"
+                            className="h-12 bg-gray-50 border-gray-200 text-gray-900 placeholder:text-gray-500 focus:border-blue-500 focus:ring-blue-500/20 rounded-lg pr-12"
                             {...field}
                           />
                         </FormControl>
@@ -151,7 +173,7 @@ const SignIn = () => {
                           type="button"
                           variant="ghost"
                           size="sm"
-                          className="absolute right-0 top-0 h-full px-3 hover:bg-transparent text-gray-400 hover:text-white"
+                          className="absolute right-0 top-0 h-12 px-3 hover:bg-transparent text-gray-400 hover:text-gray-600"
                           onClick={() => setShowPassword(!showPassword)}
                         >
                           {showPassword ? (
@@ -161,14 +183,14 @@ const SignIn = () => {
                           )}
                         </Button>
                       </div>
-                      <FormMessage className="text-red-300" />
+                      <FormMessage className="text-red-500" />
                     </FormItem>
                   )}
                 />
 
                 <Button
                   type="submit"
-                  className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white font-semibold py-3 rounded-lg shadow-lg hover:shadow-xl transition-all duration-200"
+                  className="w-full h-12 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transition-all duration-200"
                   disabled={isLoading}
                 >
                   {isLoading ? (
@@ -179,7 +201,7 @@ const SignIn = () => {
                   ) : (
                     <>
                       <LogIn className="mr-2 h-5 w-5" />
-                      Launch SmartTasker AI
+                      Sign In to SmartTasker
                     </>
                   )}
                 </Button>
@@ -187,17 +209,25 @@ const SignIn = () => {
             </Form>
 
             {/* Demo Credentials */}
-            <div className="mt-8 pt-6 border-t border-white/20">
+            <div className="mt-8 pt-6 border-t border-gray-200">
               <div className="text-center">
-                <p className="text-xs text-gray-400 mb-3">
-                  Experience the future of task management
+                <p className="text-sm text-gray-500 mb-4 font-medium">
+                  Demo Credentials Available
                 </p>
-                <div className="text-xs text-gray-300 space-y-2 bg-white/5 rounded-lg p-4">
-                  <p className="text-purple-300 font-semibold mb-2">Demo Credentials:</p>
-                  <div className="space-y-1">
-                    <p><span className="text-orange-300">Admin:</span> admin@smarttasker.ai / admin123</p>
-                    <p><span className="text-blue-300">Team Leader:</span> leader@smarttasker.ai / leader123</p>
-                    <p><span className="text-green-300">Team Member:</span> member@smarttasker.ai / member123</p>
+                <div className="text-sm space-y-3 bg-gradient-to-r from-gray-50 to-blue-50 rounded-lg p-4 border border-gray-200">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between p-2 bg-white rounded border border-orange-200">
+                      <span className="text-orange-600 font-semibold text-xs">ADMIN</span>
+                      <span className="text-gray-700 text-xs font-mono">admin@smarttasker.ai / admin123</span>
+                    </div>
+                    <div className="flex items-center justify-between p-2 bg-white rounded border border-blue-200">
+                      <span className="text-blue-600 font-semibold text-xs">LEADER</span>
+                      <span className="text-gray-700 text-xs font-mono">leader@smarttasker.ai / leader123</span>
+                    </div>
+                    <div className="flex items-center justify-between p-2 bg-white rounded border border-green-200">
+                      <span className="text-green-600 font-semibold text-xs">MEMBER</span>
+                      <span className="text-gray-700 text-xs font-mono">member@smarttasker.ai / member123</span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -207,11 +237,37 @@ const SignIn = () => {
 
         {/* Footer */}
         <div className="text-center mt-6">
-          <p className="text-xs text-gray-400">
-            ⚡ Experience the future of task management
+          <p className="text-sm text-gray-500">
+            ⚡ Experience the future of task management with AI
           </p>
         </div>
       </div>
+
+      <style jsx>{`
+        @keyframes blob {
+          0% {
+            transform: translate(0px, 0px) scale(1);
+          }
+          33% {
+            transform: translate(30px, -50px) scale(1.1);
+          }
+          66% {
+            transform: translate(-20px, 20px) scale(0.9);
+          }
+          100% {
+            transform: translate(0px, 0px) scale(1);
+          }
+        }
+        .animate-blob {
+          animation: blob 7s infinite;
+        }
+        .animation-delay-2000 {
+          animation-delay: 2s;
+        }
+        .animation-delay-4000 {
+          animation-delay: 4s;
+        }
+      `}</style>
     </div>
   );
 };
