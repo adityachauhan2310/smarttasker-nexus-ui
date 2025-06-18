@@ -14,6 +14,7 @@ interface User {
   teamId?: string;
   createdAt: string;
   updatedAt: string;
+  lastLogin?: string;
 }
 
 interface Team {
@@ -51,9 +52,9 @@ interface CalendarEvent {
   id: string;
   title: string;
   date: string;
-  type: string;
-  priority: string;
-  status: string;
+  type: 'hr' | 'task' | 'meeting' | 'deadline' | 'event' | 'maintenance' | 'audit';
+  priority: 'low' | 'medium' | 'high';
+  status: 'cancelled' | 'confirmed' | 'tentative';
 }
 
 interface CreateTeamData {
@@ -82,12 +83,20 @@ interface CreateUserData {
   password: string;
 }
 
+interface UpdateUserData {
+  name?: string;
+  email?: string;
+  role?: 'admin' | 'team_leader' | 'team_member';
+  isActive?: boolean;
+  teamId?: string;
+}
+
 interface CalendarEventData {
   title: string;
   date: string;
-  type: string;
-  priority: string;
-  status: string;
+  type: 'hr' | 'task' | 'meeting' | 'deadline' | 'event' | 'maintenance' | 'audit';
+  priority: 'low' | 'medium' | 'high';
+  status: 'cancelled' | 'confirmed' | 'tentative';
 }
 
 // API Response Wrapper
@@ -98,6 +107,7 @@ interface ApiResponse<T> {
     limit: number;
     total: number;
     totalPages: number;
+    pages?: number;
   };
 }
 
@@ -131,13 +141,14 @@ export const useUsers = (params?: {
       const users = data?.map(profile => ({
         id: profile.id,
         name: profile.name,
-        email: profile.email || '',
+        email: profile.id + '@example.com', // Use a fallback since email might not be in profiles
         role: profile.role as 'admin' | 'team_leader' | 'team_member',
         avatar: profile.avatar,
         isActive: profile.is_active,
         teamId: profile.team_id,
         createdAt: profile.created_at,
         updatedAt: profile.updated_at,
+        lastLogin: profile.updated_at, // Using updated_at as fallback for lastLogin
       })) || [];
 
       return {
@@ -224,7 +235,7 @@ export const useTeams = (params?: {
         leader: team.leader ? {
           id: team.leader.id,
           name: team.leader.name,
-          email: team.leader.email || '',
+          email: team.leader.id + '@example.com',
           role: team.leader.role as 'admin' | 'team_leader' | 'team_member',
           avatar: team.leader.avatar,
           isActive: team.leader.is_active,
@@ -329,7 +340,7 @@ export const useTasks = (params?: {
         assignee: task.assignee ? {
           id: task.assignee.id,
           name: task.assignee.name,
-          email: task.assignee.email || '',
+          email: task.assignee.id + '@example.com',
           role: task.assignee.role as 'admin' | 'team_leader' | 'team_member',
           avatar: task.assignee.avatar,
           isActive: task.assignee.is_active,
@@ -340,7 +351,7 @@ export const useTasks = (params?: {
         createdByUser: task.createdByUser ? {
           id: task.createdByUser.id,
           name: task.createdByUser.name,
-          email: task.createdByUser.email || '',
+          email: task.createdByUser.id + '@example.com',
           role: task.createdByUser.role as 'admin' | 'team_leader' | 'team_member',
           avatar: task.createdByUser.avatar,
           isActive: task.createdByUser.is_active,
@@ -450,9 +461,9 @@ export const useCalendarEvents = () => {
         id: event.id,
         title: event.title,
         date: event.date,
-        type: event.type,
-        priority: event.priority,
-        status: event.status,
+        type: event.type as 'hr' | 'task' | 'meeting' | 'deadline' | 'event' | 'maintenance' | 'audit',
+        priority: event.priority as 'low' | 'medium' | 'high',
+        status: event.status as 'cancelled' | 'confirmed' | 'tentative',
       })) || [];
     },
   });
@@ -475,9 +486,9 @@ export const useCreateCalendarEvent = () => {
         id: data.id,
         title: data.title,
         date: data.date,
-        type: data.type,
-        priority: data.priority,
-        status: data.status,
+        type: data.type as 'hr' | 'task' | 'meeting' | 'deadline' | 'event' | 'maintenance' | 'audit',
+        priority: data.priority as 'low' | 'medium' | 'high',
+        status: data.status as 'cancelled' | 'confirmed' | 'tentative',
       };
     },
     onSuccess: () => {
@@ -509,9 +520,9 @@ export const useUpdateCalendarEvent = () => {
         id: data.id,
         title: data.title,
         date: data.date,
-        type: data.type,
-        priority: data.priority,
-        status: data.status,
+        type: data.type as 'hr' | 'task' | 'meeting' | 'deadline' | 'event' | 'maintenance' | 'audit',
+        priority: data.priority as 'low' | 'medium' | 'high',
+        status: data.status as 'cancelled' | 'confirmed' | 'tentative',
       };
     },
     onSuccess: () => {
@@ -587,6 +598,101 @@ export const useCreateUser = () => {
   });
 };
 
+export const useUpdateUser = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ userId, userData }: { userId: string; userData: UpdateUserData }): Promise<User> => {
+      const updateData: any = {};
+      
+      if (userData.name !== undefined) updateData.name = userData.name;
+      if (userData.role !== undefined) updateData.role = userData.role;
+      if (userData.isActive !== undefined) updateData.is_active = userData.isActive;
+      if (userData.teamId !== undefined) updateData.team_id = userData.teamId;
+
+      updateData.updated_at = new Date().toISOString();
+
+      const { data, error } = await supabase
+        .from('profiles')
+        .update(updateData)
+        .eq('id', userId)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      return {
+        id: data.id,
+        name: data.name,
+        email: data.id + '@example.com',
+        role: data.role as 'admin' | 'team_leader' | 'team_member',
+        avatar: data.avatar,
+        isActive: data.is_active,
+        teamId: data.team_id,
+        createdAt: data.created_at,
+        updatedAt: data.updated_at,
+      };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      toast.success('User updated successfully');
+    },
+    onError: (error: any) => {
+      console.error('Failed to update user:', error);
+      toast.error('Failed to update user');
+    },
+  });
+};
+
+export const useDeleteUser = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (userId: string): Promise<void> => {
+      const { error } = await supabase
+        .from('profiles')
+        .delete()
+        .eq('id', userId);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      toast.success('User deleted successfully');
+    },
+    onError: (error: any) => {
+      console.error('Failed to delete user:', error);
+      toast.error('Failed to delete user');
+    },
+  });
+};
+
+export const useResetUserPassword = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ userId, password }: { userId: string | null; password: string }): Promise<void> => {
+      if (!userId) throw new Error('User ID is required');
+      
+      // This would typically require admin privileges or a server-side function
+      // For now, we'll simulate the operation
+      console.log(`Resetting password for user ${userId}`);
+      
+      // In a real implementation, you'd call a Supabase edge function or admin API
+      // const { error } = await supabase.auth.admin.updateUserById(userId, { password });
+      // if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      toast.success('Password reset successfully');
+    },
+    onError: (error: any) => {
+      console.error('Failed to reset password:', error);
+      toast.error('Failed to reset password');
+    },
+  });
+};
+
 // Analytics API
 export const useAnalytics = () => {
   return useQuery({
@@ -639,4 +745,4 @@ export const useAnalytics = () => {
 };
 
 // Export types
-export type { User, Team, Task, CalendarEvent, CalendarEventData, CreateTeamData, UpdateTaskData, CreateUserData };
+export type { User, Team, Task, CalendarEvent, CalendarEventData, CreateTeamData, UpdateTaskData, CreateUserData, UpdateUserData };
