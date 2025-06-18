@@ -1,10 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { zodResolver } from '@hookform/resolvers/zod';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Textarea } from '@/components/ui/textarea';
+import { useUpdateTask, useUsers } from '@/hooks/useApi';
 import { useForm } from 'react-hook-form';
-import { z } from 'zod';
-import { toast } from 'sonner';
+import { zodResolver } from '@hookform/resolvers/zod';
+import * as z from 'zod';
 import {
   Form,
   FormControl,
@@ -13,143 +19,94 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { CalendarIcon, CheckCircle, Circle, Clock, Edit, User } from 'lucide-react';
 import { format } from 'date-fns';
-import { CalendarIcon, Loader2 } from 'lucide-react';
-import { Calendar } from '@/components/ui/calendar';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { cn } from '@/lib/utils';
-import { useUpdateTask } from '@/hooks/useApi';
+import { toast } from 'sonner';
+import { Task, UpdateTaskData } from '@/hooks/useApi';
 
-// Form schema
 const formSchema = z.object({
-  title: z.string().min(1, 'Title is required'),
+  title: z.string().min(3, { message: 'Title must be at least 3 characters' }),
   description: z.string().optional(),
-  priority: z.enum(['low', 'medium', 'high', 'urgent']),
-  status: z.enum(['pending', 'in_progress', 'completed']),
-  dueDate: z.date().optional().nullable(),
-  assignedTo: z.string().optional().nullable(),
+  status: z.enum(['pending', 'in_progress', 'completed', 'cancelled']),
+  priority: z.enum(['low', 'medium', 'high']),
+  dueDate: z.date().optional(),
+  estimatedTime: z.string().optional(),
+  assignedTo: z.string().optional(),
+  tags: z.string().optional(),
 });
 
-// Form values type
 type FormValues = z.infer<typeof formSchema>;
 
-// Component props
-interface EditTaskModalProps {
-  isOpen?: boolean;
-  open?: boolean;
-  onClose?: () => void;
-  onOpenChange?: (open: boolean) => void;
-  task: any;
-  teamMembers?: { _id: string; name: string }[];
-  onTaskUpdated?: () => void;
-}
+type EditTaskModalProps = {
+  task: Task;
+  isOpen: boolean;
+  onClose: () => void;
+};
 
-export default function EditTaskModal({
-  isOpen,
-  open,
-  onClose,
-  onOpenChange,
+const EditTaskModal: React.FC<EditTaskModalProps> = ({
   task,
-  teamMembers = [],
-  onTaskUpdated
-}: EditTaskModalProps) {
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  isOpen,
+  onClose,
+}) => {
   const updateTaskMutation = useUpdateTask();
+  const [date, setDate] = React.useState<Date | undefined>(task.dueDate ? new Date(task.dueDate) : undefined);
   
-  // Use either isOpen or open prop
-  const isDialogOpen = isOpen !== undefined ? isOpen : open !== undefined ? open : false;
+  const { data: usersResponse, isLoading: isLoadingUsers } = useUsers({
+    limit: 100
+  });
+
+  const users = usersResponse?.data || [];
   
-  // Handle dialog close
-  const handleDialogClose = (openState: boolean) => {
-    if (!openState) {
-      if (onClose) onClose();
-      if (onOpenChange) onOpenChange(false);
-    }
-  };
-  
-  // Initialize form with task data
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      title: task?.title || '',
-      description: task?.description || '',
-      priority: task?.priority || 'medium',
-      status: task?.status || 'pending',
-      dueDate: task?.dueDate ? new Date(task.dueDate) : null,
-      assignedTo: task?.assignedTo?._id || 'unassigned',
+      title: task.title,
+      description: task.description || '',
+      status: task.status,
+      priority: task.priority,
+      dueDate: task.dueDate ? new Date(task.dueDate) : undefined,
+      estimatedTime: task.estimatedTime?.toString() || '',
+      assignedTo: task.assignedTo || '',
+      tags: task.tags?.join(', ') || '',
     },
   });
-  
-  // Update form values when task changes
-  useEffect(() => {
-    if (task) {
-      form.reset({
-        title: task.title || '',
-        description: task.description || '',
-        priority: task.priority || 'medium',
-        status: task.status || 'pending',
-        dueDate: task.dueDate ? new Date(task.dueDate) : null,
-        assignedTo: task.assignedTo?._id || 'unassigned',
-      });
-    }
-  }, [task, form]);
 
-  const onSubmit = async (data: FormValues) => {
-    if (!task?._id) return;
-    
+  const onSubmit = async (values: FormValues) => {
     try {
-      setIsSubmitting(true);
-      
-      // Use the update task mutation
-      // Process the assignedTo field - convert "unassigned" to null
-      const processedData = {
-        ...data,
-        assignedTo: data.assignedTo === "unassigned" ? null : data.assignedTo,
-        dueDate: data.dueDate ? format(data.dueDate, 'yyyy-MM-dd') : undefined,
+      const taskData: UpdateTaskData = {
+        title: values.title,
+        description: values.description,
+        status: values.status,
+        priority: values.priority,
+        dueDate: values.dueDate?.toISOString(),
+        estimatedTime: values.estimatedTime ? parseInt(values.estimatedTime) : undefined,
+        assignedTo: values.assignedTo || undefined,
+        tags: values.tags?.split(',').map(tag => tag.trim()).filter(Boolean) || [],
       };
 
-      await updateTaskMutation.mutateAsync({
-        taskId: task._id,
-        data: processedData,
-      });
+      await updateTaskMutation.mutateAsync({ taskId: task.id, taskData });
       
-      // Success
-      toast.success('Task updated successfully');
-      handleDialogClose(false);
-      
-      // Call the callback if provided
-      if (onTaskUpdated) {
-        onTaskUpdated();
-      }
+      onClose();
     } catch (error) {
-      console.error('Error updating task:', error);
-      toast.error('Failed to update task. Please try again.');
-    } finally {
-      setIsSubmitting(false);
+      console.error('Failed to update task:', error);
     }
   };
 
   return (
-    <Dialog open={isDialogOpen} onOpenChange={handleDialogClose}>
-      <DialogContent className="sm:max-w-[500px]">
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-[550px]">
         <DialogHeader>
-          <DialogTitle>Edit Task</DialogTitle>
+          <DialogTitle className="flex items-center space-x-2">
+            <Edit className="h-5 w-5" />
+            <span>Edit Task</span>
+          </DialogTitle>
           <DialogDescription>
-            Update the task details below.
+            Update task details
           </DialogDescription>
         </DialogHeader>
         
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
             <FormField
               control={form.control}
               name="title"
@@ -157,7 +114,7 @@ export default function EditTaskModal({
                 <FormItem>
                   <FormLabel>Title</FormLabel>
                   <FormControl>
-                    <Input placeholder="Task title" {...field} />
+                    <Input placeholder="Enter task title" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -171,141 +128,192 @@ export default function EditTaskModal({
                 <FormItem>
                   <FormLabel>Description</FormLabel>
                   <FormControl>
-                    <Textarea placeholder="Task description" {...field} />
+                    <Textarea 
+                      placeholder="Enter task description"
+                      className="resize-none"
+                      rows={3}
+                      {...field} 
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
             />
             
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="priority"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Priority</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select priority" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="low">Low</SelectItem>
-                        <SelectItem value="medium">Medium</SelectItem>
-                        <SelectItem value="high">High</SelectItem>
-                        <SelectItem value="urgent">Urgent</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              
-              <FormField
-                control={form.control}
-                name="status"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Status</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select status" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="pending">Pending</SelectItem>
-                        <SelectItem value="in_progress">In Progress</SelectItem>
-                        <SelectItem value="completed">Completed</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-            
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="dueDate"
-                render={({ field }) => (
-                  <FormItem className="flex flex-col">
-                    <FormLabel>Due Date</FormLabel>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <FormControl>
-                          <Button
-                            variant="outline"
-                            className={cn(
-                              "w-full pl-3 text-left font-normal",
-                              !field.value && "text-muted-foreground"
-                            )}
-                          >
-                            {field.value ? (
-                              format(field.value, "PPP")
-                            ) : (
-                              <span>No date selected</span>
-                            )}
-                            <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                          </Button>
-                        </FormControl>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0" align="start">
-                        <Calendar
-                          mode="single"
-                          selected={field.value || undefined}
-                          onSelect={field.onChange}
-                          initialFocus
-                        />
-                      </PopoverContent>
-                    </Popover>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              
-              {teamMembers.length > 0 && (
-                <FormField
-                  control={form.control}
-                  name="assignedTo"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Assign To</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value || undefined}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select team member" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="unassigned">Unassigned</SelectItem>
-                          {teamMembers.map((member) => (
-                            <SelectItem key={member._id} value={member._id}>
-                              {member.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+            <FormField
+              control={form.control}
+              name="status"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Status</FormLabel>
+                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a status" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="pending">
+                        <span className="flex items-center gap-2"><Circle className="h-3 w-3 text-gray-400" /> Pending</span>
+                      </SelectItem>
+                      <SelectItem value="in_progress">
+                        <span className="flex items-center gap-2"><Clock className="h-3 w-3 text-blue-500" /> In Progress</span>
+                      </SelectItem>
+                      <SelectItem value="completed">
+                        <span className="flex items-center gap-2"><CheckCircle className="h-3 w-3 text-green-500" /> Completed</span>
+                      </SelectItem>
+                      <SelectItem value="cancelled">
+                        <span className="flex items-center gap-2"><Circle className="h-3 w-3 text-red-500" /> Cancelled</span>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
               )}
-            </div>
+            />
+
+            <FormField
+              control={form.control}
+              name="priority"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Priority</FormLabel>
+                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a priority" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="low">Low</SelectItem>
+                      <SelectItem value="medium">Medium</SelectItem>
+                      <SelectItem value="high">High</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
             
-            <div className="flex justify-end space-x-2 pt-4">
-              <Button type="button" variant="outline" onClick={() => handleDialogClose(false)}>
+            <FormField
+              control={form.control}
+              name="dueDate"
+              render={({ field }) => (
+                <FormItem className="flex flex-col">
+                  <FormLabel>Due Date</FormLabel>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <FormControl>
+                        <Button
+                          variant={'outline'}
+                          className="w-[240px] pl-3 text-left font-normal"
+                        >
+                          {date ? (
+                            format(date, 'PPP')
+                          ) : (
+                            <span>Pick a date</span>
+                          )}
+                          <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                        </Button>
+                      </FormControl>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={date}
+                        onSelect={setDate}
+                        disabled={(date) =>
+                          date < new Date()
+                        }
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="estimatedTime"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Estimated Time (hours)</FormLabel>
+                  <FormControl>
+                    <Input 
+                      type="number"
+                      placeholder="Enter estimated time"
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="assignedTo"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="flex items-center gap-2">
+                    <User className="h-4 w-4" /> 
+                    <span>Assign To</span>
+                  </FormLabel>
+                  <Select 
+                    onValueChange={field.onChange} 
+                    defaultValue={field.value}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a user" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {isLoadingUsers ? (
+                        <SelectItem value="loading" disabled>Loading users...</SelectItem>
+                      ) : (
+                        users.map(user => (
+                          <SelectItem key={user.id} value={user.id}>{user.name}</SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="tags"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Tags (comma separated)</FormLabel>
+                  <FormControl>
+                    <Input 
+                      placeholder="Enter tags"
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            
+            <div className="flex justify-end space-x-2 pt-4 mt-6 border-t">
+              <Button type="button" variant="outline" onClick={onClose}>
                 Cancel
               </Button>
-              <Button 
-                type="submit" 
-                disabled={isSubmitting}
-                className="bg-gradient-to-r from-blue-500 to-green-500 hover:from-blue-600 hover:to-green-600"
-              >
-                {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : 'Save Changes'}
+              <Button type="submit" disabled={updateTaskMutation.isPending}>
+                {updateTaskMutation.isPending ? (
+                  <>
+                    Updating...
+                  </>
+                ) : (
+                  'Update Task'
+                )}
               </Button>
             </div>
           </form>
@@ -313,4 +321,6 @@ export default function EditTaskModal({
       </DialogContent>
     </Dialog>
   );
-}
+};
+
+export default EditTaskModal;

@@ -47,6 +47,15 @@ interface Task {
   createdByUser?: User;
 }
 
+interface CalendarEvent {
+  id: string;
+  title: string;
+  date: string;
+  type: string;
+  priority: string;
+  status: string;
+}
+
 interface CreateTeamData {
   name: string;
   description?: string;
@@ -64,6 +73,21 @@ interface UpdateTaskData {
   assignedTo?: string;
   teamId?: string;
   tags?: string[];
+}
+
+interface CreateUserData {
+  name: string;
+  email: string;
+  role: 'admin' | 'team_leader' | 'team_member';
+  password: string;
+}
+
+interface CalendarEventData {
+  title: string;
+  date: string;
+  type: string;
+  priority: string;
+  status: string;
 }
 
 // API Response Wrapper
@@ -104,8 +128,20 @@ export const useUsers = (params?: {
 
       if (error) throw error;
 
+      const users = data?.map(profile => ({
+        id: profile.id,
+        name: profile.name,
+        email: profile.email || '',
+        role: profile.role as 'admin' | 'team_leader' | 'team_member',
+        avatar: profile.avatar,
+        isActive: profile.is_active,
+        teamId: profile.team_id,
+        createdAt: profile.created_at,
+        updatedAt: profile.updated_at,
+      })) || [];
+
       return {
-        data: data || [],
+        data: users,
         pagination: {
           page: params?.page || 0,
           limit: params?.limit || 10,
@@ -141,7 +177,7 @@ export const useCurrentUser = () => {
             id: profile.id,
             name: profile.name,
             email: user.email || '',
-            role: profile.role,
+            role: profile.role as 'admin' | 'team_leader' | 'team_member',
             avatar: profile.avatar,
             isActive: profile.is_active,
             teamId: profile.team_id,
@@ -178,7 +214,25 @@ export const useTeams = (params?: {
 
       if (error) throw error;
 
-      return data || [];
+      return data?.map(team => ({
+        id: team.id,
+        name: team.name,
+        description: team.description,
+        leaderId: team.leader_id,
+        createdAt: team.created_at,
+        updatedAt: team.updated_at,
+        leader: team.leader ? {
+          id: team.leader.id,
+          name: team.leader.name,
+          email: team.leader.email || '',
+          role: team.leader.role as 'admin' | 'team_leader' | 'team_member',
+          avatar: team.leader.avatar,
+          isActive: team.leader.is_active,
+          teamId: team.leader.team_id,
+          createdAt: team.leader.created_at,
+          updatedAt: team.leader.updated_at,
+        } : undefined,
+      })) || [];
     },
   });
 };
@@ -200,7 +254,14 @@ export const useCreateTeam = () => {
 
       if (error) throw error;
 
-      return data;
+      return {
+        id: data.id,
+        name: data.name,
+        description: data.description,
+        leaderId: data.leader_id,
+        createdAt: data.created_at,
+        updatedAt: data.updated_at,
+      };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['teams'] });
@@ -253,8 +314,8 @@ export const useTasks = (params?: {
         id: task.id,
         title: task.title,
         description: task.description,
-        status: task.status,
-        priority: task.priority,
+        status: task.status as 'pending' | 'in_progress' | 'completed' | 'cancelled',
+        priority: task.priority as 'low' | 'medium' | 'high',
         dueDate: task.due_date,
         estimatedTime: task.estimated_time,
         actualTime: task.actual_time,
@@ -269,7 +330,7 @@ export const useTasks = (params?: {
           id: task.assignee.id,
           name: task.assignee.name,
           email: task.assignee.email || '',
-          role: task.assignee.role,
+          role: task.assignee.role as 'admin' | 'team_leader' | 'team_member',
           avatar: task.assignee.avatar,
           isActive: task.assignee.is_active,
           teamId: task.assignee.team_id,
@@ -280,7 +341,7 @@ export const useTasks = (params?: {
           id: task.createdByUser.id,
           name: task.createdByUser.name,
           email: task.createdByUser.email || '',
-          role: task.createdByUser.role,
+          role: task.createdByUser.role as 'admin' | 'team_leader' | 'team_member',
           avatar: task.createdByUser.avatar,
           isActive: task.createdByUser.is_active,
           teamId: task.createdByUser.team_id,
@@ -321,7 +382,23 @@ export const useUpdateTask = () => {
 
       if (error) throw error;
 
-      return data;
+      return {
+        id: data.id,
+        title: data.title,
+        description: data.description,
+        status: data.status as 'pending' | 'in_progress' | 'completed' | 'cancelled',
+        priority: data.priority as 'low' | 'medium' | 'high',
+        dueDate: data.due_date,
+        estimatedTime: data.estimated_time,
+        actualTime: data.actual_time,
+        createdBy: data.created_by,
+        assignedTo: data.assigned_to,
+        teamId: data.team_id,
+        tags: data.tags,
+        createdAt: data.created_at,
+        updatedAt: data.updated_at,
+        completedAt: data.completed_at,
+      };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tasks'] });
@@ -334,11 +411,34 @@ export const useUpdateTask = () => {
   });
 };
 
+export const useDeleteTask = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (taskId: string): Promise<void> => {
+      const { error } = await supabase
+        .from('tasks')
+        .delete()
+        .eq('id', taskId);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      toast.success('Task deleted successfully');
+    },
+    onError: (error: any) => {
+      console.error('Failed to delete task:', error);
+      toast.error('Failed to delete task');
+    },
+  });
+};
+
 // Calendar Events API
 export const useCalendarEvents = () => {
   return useQuery({
     queryKey: ['calendarEvents'],
-    queryFn: async () => {
+    queryFn: async (): Promise<CalendarEvent[]> => {
       const { data, error } = await supabase
         .from('calendar_events')
         .select('*')
@@ -354,6 +454,135 @@ export const useCalendarEvents = () => {
         priority: event.priority,
         status: event.status,
       })) || [];
+    },
+  });
+};
+
+export const useCreateCalendarEvent = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (eventData: CalendarEventData): Promise<CalendarEvent> => {
+      const { data, error } = await supabase
+        .from('calendar_events')
+        .insert(eventData)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      return {
+        id: data.id,
+        title: data.title,
+        date: data.date,
+        type: data.type,
+        priority: data.priority,
+        status: data.status,
+      };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['calendarEvents'] });
+      toast.success('Event created successfully');
+    },
+    onError: (error: any) => {
+      console.error('Failed to create event:', error);
+      toast.error('Failed to create event');
+    },
+  });
+};
+
+export const useUpdateCalendarEvent = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ eventId, eventData }: { eventId: string; eventData: CalendarEventData }): Promise<CalendarEvent> => {
+      const { data, error } = await supabase
+        .from('calendar_events')
+        .update(eventData)
+        .eq('id', eventId)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      return {
+        id: data.id,
+        title: data.title,
+        date: data.date,
+        type: data.type,
+        priority: data.priority,
+        status: data.status,
+      };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['calendarEvents'] });
+      toast.success('Event updated successfully');
+    },
+    onError: (error: any) => {
+      console.error('Failed to update event:', error);
+      toast.error('Failed to update event');
+    },
+  });
+};
+
+export const useDeleteCalendarEvent = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (eventId: string): Promise<void> => {
+      const { error } = await supabase
+        .from('calendar_events')
+        .delete()
+        .eq('id', eventId);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['calendarEvents'] });
+      toast.success('Event deleted successfully');
+    },
+    onError: (error: any) => {
+      console.error('Failed to delete event:', error);
+      toast.error('Failed to delete event');
+    },
+  });
+};
+
+// Users Management API
+export const useCreateUser = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (userData: CreateUserData): Promise<User> => {
+      const { data, error } = await supabase.auth.signUp({
+        email: userData.email,
+        password: userData.password,
+        options: {
+          data: {
+            name: userData.name,
+            role: userData.role,
+          }
+        }
+      });
+
+      if (error) throw error;
+
+      return {
+        id: data.user?.id || '',
+        name: userData.name,
+        email: userData.email,
+        role: userData.role,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      toast.success('User created successfully');
+    },
+    onError: (error: any) => {
+      console.error('Failed to create user:', error);
+      toast.error('Failed to create user');
     },
   });
 };
@@ -409,10 +638,5 @@ export const useAnalytics = () => {
   });
 };
 
-// Export all hooks
-export {
-  useCreateTeam,
-  useUpdateTask,
-  useCalendarEvents,
-  useAnalytics,
-};
+// Export types
+export type { User, Team, Task, CalendarEvent, CalendarEventData, CreateTeamData, UpdateTaskData, CreateUserData };
