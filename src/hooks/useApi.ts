@@ -1,4 +1,5 @@
 
+
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -92,6 +93,7 @@ interface UpdateUserData {
 }
 
 interface CalendarEventData {
+  id?: string;
   title: string;
   date: string;
   type: 'hr' | 'task' | 'meeting' | 'deadline' | 'event' | 'maintenance' | 'audit';
@@ -364,6 +366,32 @@ export const useTasks = (params?: {
   });
 };
 
+// New hook to transform tasks into calendar events
+export const useTasksAsEvents = (params?: {
+  startDate?: string;
+  endDate?: string;
+  userId?: string;
+  status?: string;
+}) => {
+  const { data: tasks, isLoading, isError, refetch } = useTasks();
+
+  return {
+    events: tasks?.filter(task => task.dueDate).map(task => ({
+      id: task.id,
+      title: task.title,
+      date: task.dueDate!,
+      type: 'task' as const,
+      priority: task.priority,
+      status: task.status === 'completed' ? 'confirmed' as const : 'tentative' as const,
+      isTask: true,
+    })) || [],
+    isLoading,
+    isError,
+    refetch,
+    originalTasks: tasks,
+  };
+};
+
 export const useUpdateTask = () => {
   const queryClient = useQueryClient();
 
@@ -446,18 +474,31 @@ export const useDeleteTask = () => {
 };
 
 // Calendar Events API
-export const useCalendarEvents = () => {
+export const useCalendarEvents = (params?: {
+  startDate?: string;
+  endDate?: string;
+}) => {
   return useQuery({
-    queryKey: ['calendarEvents'],
-    queryFn: async (): Promise<CalendarEvent[]> => {
-      const { data, error } = await supabase
+    queryKey: ['calendarEvents', params],
+    queryFn: async (): Promise<ApiResponse<{ events: CalendarEvent[] }>> => {
+      let query = supabase
         .from('calendar_events')
         .select('*')
         .order('date', { ascending: true });
 
+      if (params?.startDate) {
+        query = query.gte('date', params.startDate);
+      }
+
+      if (params?.endDate) {
+        query = query.lte('date', params.endDate);
+      }
+
+      const { data, error } = await query;
+
       if (error) throw error;
 
-      return data?.map(event => ({
+      const events = data?.map(event => ({
         id: event.id,
         title: event.title,
         date: event.date,
@@ -465,6 +506,10 @@ export const useCalendarEvents = () => {
         priority: event.priority as 'low' | 'medium' | 'high',
         status: event.status as 'cancelled' | 'confirmed' | 'tentative',
       })) || [];
+
+      return {
+        data: { events }
+      };
     },
   });
 };
@@ -746,3 +791,4 @@ export const useAnalytics = () => {
 
 // Export types
 export type { User, Team, Task, CalendarEvent, CalendarEventData, CreateTeamData, UpdateTaskData, CreateUserData, UpdateUserData };
+
