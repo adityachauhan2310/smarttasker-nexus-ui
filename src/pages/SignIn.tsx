@@ -42,12 +42,10 @@ const SignIn = () => {
     },
   });
 
-  // Redirect if already authenticated
   useEffect(() => {
     if (isAuthenticated && user) {
       const from = location.state?.from?.pathname;
       
-      // Redirect based on user role
       if (user.role === 'admin') {
         navigate(from || '/admin/dashboard', { replace: true });
       } else if (user.role === 'team_leader') {
@@ -78,10 +76,6 @@ const SignIn = () => {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-100 via-blue-50 to-purple-100 dark:from-slate-950 dark:via-blue-950/90 dark:to-purple-950/90 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full space-y-8">
         <div className="text-center">
-          <Link to="/" className="inline-flex items-center text-blue-600 hover:text-blue-700 mb-4">
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Home
-          </Link>
           <h2 className="text-4xl font-extrabold text-gray-900 dark:text-white">
             Welcome Back
           </h2>
@@ -162,15 +156,6 @@ const SignIn = () => {
                   )}
                 />
 
-                <div className="flex items-center justify-between">
-                  <Link
-                    to="/forgot-password"
-                    className="text-sm text-blue-600 hover:text-blue-700 font-medium"
-                  >
-                    Forgot your password?
-                  </Link>
-                </div>
-
                 <Button
                   type="submit"
                   className="w-full h-12 bg-gradient-to-r from-blue-600 to-green-600 hover:from-blue-700 hover:to-green-700 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-200"
@@ -191,18 +176,6 @@ const SignIn = () => {
               </form>
             </Form>
 
-            <div className="mt-6 text-center">
-              <p className="text-sm text-gray-600 dark:text-gray-400">
-                Don't have an account?{' '}
-                <Link
-                  to="/signup"
-                  className="font-medium text-blue-600 hover:text-blue-700"
-                >
-                  Sign up
-                </Link>
-              </p>
-            </div>
-
             <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
               <div className="text-center">
                 <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
@@ -210,6 +183,8 @@ const SignIn = () => {
                 </p>
                 <div className="text-xs text-gray-600 dark:text-gray-300 space-y-1">
                   <p><strong>Admin:</strong> admin@smarttasker.ai / admin123</p>
+                  <p><strong>Team Leader:</strong> leader@smarttasker.ai / leader123</p>
+                  <p><strong>Team Member:</strong> member@smarttasker.ai / member123</p>
                 </div>
               </div>
             </div>

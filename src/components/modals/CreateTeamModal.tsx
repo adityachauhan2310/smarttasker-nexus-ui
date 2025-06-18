@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -16,7 +17,7 @@ import {
   FormMessage,
   FormDescription,
 } from '@/components/ui/form';
-import { Building, Loader2, Users, UserCheck, Info } from 'lucide-react';
+import { Building, Loader2, Users, UserCheck } from 'lucide-react';
 import { 
   Select, 
   SelectContent, 
@@ -24,19 +25,14 @@ import {
   SelectTrigger, 
   SelectValue 
 } from '@/components/ui/select';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
-import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
-// Form schema validation
 const formSchema = z.object({
   name: z.string().min(3, { message: 'Team name must be at least 3 characters' }),
   description: z.string().optional(),
   leaderId: z.string({ required_error: 'A team leader is required' }),
-  memberIds: z.array(z.string()).optional(),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -53,7 +49,6 @@ const CreateTeamModal: React.FC<CreateTeamModalProps> = ({
   const createTeamMutation = useCreateTeam();
   const [selectedLeader, setSelectedLeader] = React.useState<string | null>(null);
   
-  // Fetch users for leader and member selection
   const { data: usersData, isLoading: isLoadingUsers, refetch: refetchUsers } = useUsers({
     limit: 100
   });
@@ -62,22 +57,12 @@ const CreateTeamModal: React.FC<CreateTeamModalProps> = ({
   
   React.useEffect(() => {
     if (isOpen) {
-      // Refresh users data when modal is opened
       refetchUsers();
-      
-      // Log the users data to debug
-      console.log('Users data:', users);
     }
-  }, [isOpen, refetchUsers, users]);
+  }, [isOpen, refetchUsers]);
   
-  // Filter users for team leaders and members
   const possibleLeaders = users.filter(user => 
     user.role === 'admin' || user.role === 'team_leader'
-  );
-  
-  // Only show users with role 'team_member' - explicitly filter by the exact role
-  const possibleMembers = users.filter(user => 
-    user.role === 'team_member'
   );
   
   const form = useForm<FormValues>({
@@ -86,7 +71,6 @@ const CreateTeamModal: React.FC<CreateTeamModalProps> = ({
       name: '',
       description: '',
       leaderId: '',
-      memberIds: [],
     },
   });
 
@@ -97,12 +81,10 @@ const CreateTeamModal: React.FC<CreateTeamModalProps> = ({
         return;
       }
       
-      // Create the payload with explicit type checking to avoid undefined errors
       const payload = {
         name: values.name,
         description: values.description || '',
-        leader: values.leaderId,
-        members: Array.isArray(values.memberIds) ? values.memberIds : [],
+        leaderId: values.leaderId,
       };
       
       console.log('Submitting team data:', payload);
@@ -115,18 +97,10 @@ const CreateTeamModal: React.FC<CreateTeamModalProps> = ({
       onClose();
     } catch (error: any) {
       console.error('Failed to create team:', error);
-      
-      // More detailed error handling
-      if (error.response?.data?.errors) {
-        console.error('Validation errors:', error.response.data.errors);
-        toast.error(error.response.data.message || "Validation failed. Please check your inputs.");
-      } else {
-        toast.error("Failed to create team. Please try again.");
-      }
+      toast.error("Failed to create team. Please try again.");
     }
   };
 
-  // Handle leader selection
   const handleLeaderSelect = (leaderId: string) => {
     setSelectedLeader(leaderId);
     form.setValue("leaderId", leaderId);
@@ -184,7 +158,6 @@ const CreateTeamModal: React.FC<CreateTeamModalProps> = ({
               )}
             />
             
-            {/* Team Leader Select - Redesigned as radio buttons */}
             <FormField
               control={form.control}
               name="leaderId"
@@ -193,10 +166,10 @@ const CreateTeamModal: React.FC<CreateTeamModalProps> = ({
                   <FormLabel className="flex items-center gap-2">
                     <UserCheck className="h-4 w-4" /> 
                     Team Leader
-                    </FormLabel>
-                    <FormDescription>
+                  </FormLabel>
+                  <FormDescription>
                     Select one leader for this team
-                    </FormDescription>
+                  </FormDescription>
                   
                   {isLoadingUsers ? (
                     <div className="flex items-center justify-center p-4 border rounded-md">
@@ -232,112 +205,10 @@ const CreateTeamModal: React.FC<CreateTeamModalProps> = ({
                                 <p className="text-xs text-gray-500">{leader.role}</p>
                               </label>
                             </div>
-                        </div>
-                      ))}
+                          </div>
+                        ))}
                       </RadioGroup>
                     </FormControl>
-                  )}
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            
-            {/* Team Members Multi-select */}
-            <FormField
-              control={form.control}
-              name="memberIds"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="flex items-center gap-2">
-                      <Users className="h-4 w-4" />
-                    Team Members
-                    </FormLabel>
-                    <FormDescription>
-                    Select members to add to this team (optional)
-                    </FormDescription>
-                  
-                  {isLoadingUsers ? (
-                    <div className="flex items-center justify-center p-4 border rounded-md">
-                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                      <span>Loading users...</span>
-                    </div>
-                  ) : possibleMembers.length === 0 ? (
-                    <div className="p-4 border rounded-md text-center">
-                      <p className="text-amber-600 mb-2">No team members available</p>
-                      <p className="text-sm text-gray-500">Add users with 'team_member' role first</p>
-                    </div>
-                  ) : (
-                    <>
-                      {/* Selected members display */}
-                      {field.value && field.value.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mb-2 p-2 bg-gray-50 dark:bg-gray-900 rounded border">
-                          <span className="text-sm text-gray-500 w-full mb-1">Selected:</span>
-                          {field.value.map(memberId => {
-                            const member = users.find(u => u.id === memberId);
-                            return member ? (
-                              <Badge 
-                                key={memberId}
-                                variant="secondary"
-                                className="flex items-center gap-1"
-                              >
-                                {member.name}
-                                <button 
-                                  type="button"
-                                  className="ml-1 text-xs hover:text-red-500"
-                                  onClick={() => {
-                                    const currentValues = field.value || [];
-                                    field.onChange(
-                                      currentValues.filter((value) => value !== memberId)
-                                    );
-                                  }}
-                                >
-                                  ×
-                                </button>
-                              </Badge>
-                            ) : null;
-                          })}
-                        </div>
-                      )}
-                      
-                                <FormControl>
-                        <ScrollArea className="h-[150px] border rounded-md p-2">
-                          {possibleMembers.map((user) => (
-                            <div
-                              key={user.id}
-                              className="flex items-center space-x-2 p-2 rounded hover:bg-gray-50 dark:hover:bg-gray-800"
-                            >
-                                  <Checkbox
-                                id={`member-${user.id}`}
-                                    checked={field.value?.includes(user.id)}
-                                    onCheckedChange={(checked) => {
-                                      const currentValues = field.value || [];
-                                  if (checked) {
-                                    field.onChange([...currentValues, user.id]);
-                                  } else {
-                                    field.onChange(
-                                            currentValues.filter((value) => value !== user.id)
-                                          );
-                                  }
-                                }}
-                              />
-                              <Avatar className="h-7 w-7">
-                                <AvatarImage src={user.avatar} alt={user.name} />
-                                <AvatarFallback className="bg-secondary">
-                                  {user.name?.charAt(0).toUpperCase() || 'U'}
-                                </AvatarFallback>
-                              </Avatar>
-                              <label 
-                                htmlFor={`member-${user.id}`}
-                                className="flex-1 text-sm cursor-pointer"
-                              >
-                                {user.name}
-                                <p className="text-xs text-gray-500">{user.email}</p>
-                              </label>
-                                  </div>
-                      ))}
-                    </ScrollArea>
-                      </FormControl>
-                    </>
                   )}
                   <FormMessage />
                 </FormItem>
@@ -375,4 +246,4 @@ const CreateTeamModal: React.FC<CreateTeamModalProps> = ({
   );
 };
 
-export default CreateTeamModal; 
+export default CreateTeamModal;

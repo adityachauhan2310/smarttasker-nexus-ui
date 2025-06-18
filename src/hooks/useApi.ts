@@ -11,7 +11,7 @@ export const useUsers = (params?: { page?: number; limit?: number; search?: stri
     queryFn: async () => {
       let query = supabase
         .from('profiles')
-        .select('*, email:auth.users(email)', { count: 'exact' });
+        .select('*', { count: 'exact' });
 
       if (params?.search) {
         query = query.or(`name.ilike.%${params.search}%`);
@@ -34,7 +34,7 @@ export const useUsers = (params?: { page?: number; limit?: number; search?: stri
         data: data?.map(profile => ({
           id: profile.id,
           name: profile.name,
-          email: profile.email?.email || '',
+          email: '',
           role: profile.role,
           avatar: profile.avatar,
           isActive: profile.is_active,
@@ -69,7 +69,6 @@ export const useCreateUser = () => {
 
       if (error) throw error;
 
-      // Update the profile with the role
       if (data.user) {
         const { error: profileError } = await supabase
           .from('profiles')
@@ -544,7 +543,6 @@ export const useAnalytics = (params?: { timeframe?: string }) => {
   return useQuery({
     queryKey: ['analytics', params],
     queryFn: async () => {
-      // For now, return mock data since we don't have analytics tables yet
       return {
         activeUsers: 0,
         totalUsers: 0,
