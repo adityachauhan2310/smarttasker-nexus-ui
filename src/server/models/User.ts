@@ -1,7 +1,7 @@
-import mongoose, { Document, Model, Schema, Types } from 'mongoose';
-import bcrypt from 'bcrypt';
 import jwt, { Secret } from 'jsonwebtoken';
 import config from '../config/config';
+import { supabase, supabaseAdmin } from '../config/database';
+import bcrypt from 'bcrypt';
 
 // Add notification preferences interface
 export interface INotificationPreferences {
@@ -15,190 +15,276 @@ export interface INotificationPreferences {
   };
 }
 
-export interface IUser extends Document {
+export interface IUser {
+  id: string;
   name: string;
   email: string;
-  password: string;
   avatar?: string;
   role: 'admin' | 'user' | 'team_leader' | 'team_member';
   isActive: boolean;
-  verificationToken?: string;
-  verified: boolean;
-  resetPasswordToken?: string;
-  resetPasswordExpires?: Date;
-  teamId?: Types.ObjectId;
+  teamId?: string;
   notificationPreferences?: INotificationPreferences;
-  lastLogin?: Date;
-  refreshToken?: string;
   createdAt: Date;
   updatedAt: Date;
-  
-  comparePassword(enteredPassword: string): Promise<boolean>;
-  generateAuthToken(): string;
-  generateRefreshToken(): string;
 }
 
-const UserSchema: Schema<IUser> = new Schema(
-  {
-    name: {
-      type: String,
-      required: [true, 'Name is required'],
-      trim: true,
-    },
-    email: {
-      type: String,
-      required: [true, 'Email is required'],
-      unique: true,
-      trim: true,
-      lowercase: true,
-      match: [/^\S+@\S+\.\S+$/, 'Please add a valid email'],
-    },
-    password: {
-      type: String,
-      required: [true, 'Password is required'],
-      minlength: [6, 'Password must be at least 6 characters'],
-      select: false,
-    },
-    avatar: {
-      type: String,
-    },
-    role: {
-      type: String,
-      enum: ['admin', 'user', 'team_leader', 'team_member'],
-      default: 'user',
-    },
-    isActive: {
-      type: Boolean,
-      default: true,
-    },
-    verificationToken: String,
-    verified: {
-      type: Boolean,
-      default: false,
-    },
-    resetPasswordToken: String,
-    resetPasswordExpires: Date,
-    teamId: {
-      type: Schema.Types.ObjectId,
-      ref: 'Team',
-    },
-    notificationPreferences: {
-      emailDisabled: [String],
-      inAppDisabled: [String],
-      workingHours: {
-        start: {
-          type: String,
-          default: "09:00" // 9 AM
-        },
-        end: {
-          type: String,
-          default: "17:00" // 5 PM
-        },
-        timezone: {
-          type: String,
-          default: "UTC"
-        },
-        enabledDays: {
-          type: [Number],
-          default: [1, 2, 3, 4, 5] // Monday to Friday
-        }
-      }
-    },
-    lastLogin: {
-      type: Date,
-    },
-    refreshToken: {
-      type: String,
-      select: false, // Don't include in default queries
-    },
-  },
-  {
-    timestamps: true,
-  }
-);
+export class User {
+  // Static methods for working with users via Supabase
+  
+  /**
+   * Find user by ID
+   */
+  static async findById(id: string): Promise<IUser | null> {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', id)
+        .single();
 
-// Create index for email field for faster queries
-UserSchema.index({ email: 1 });
+      if (error || !data) return null;
+      
+      // Get email from auth.users
+      const { data: userData, error: userError } = await supabaseAdmin.auth.admin.getUserById(id);
+      
+      if (userError || !userData.user) return null;
 
-// Pre-save middleware to hash password before saving
-UserSchema.pre('save', async function (next) {
-  // Only hash the password if it has been modified (or is new)
-  if (!this.isModified('password')) {
-    console.log('Password not modified, skipping hash');
-    return next();
-  }
-
-  try {
-    // Don't hash already hashed passwords
-    if (this.password.startsWith('$2b$') || this.password.startsWith('$2a$')) {
-      console.log('Password appears to be already hashed, skipping rehash');
-      return next();
+      return {
+        id: data.id,
+        name: data.name,
+        email: userData.user.email || '',
+        avatar: data.avatar || undefined,
+        role: data.role as 'admin' | 'user' | 'team_leader' | 'team_member',
+        isActive: data.is_active,
+        teamId: data.team_id || undefined,
+        notificationPreferences: data.notification_preferences || undefined,
+        createdAt: new Date(data.created_at),
+        updatedAt: new Date(data.updated_at)
+      };
+    } catch (error) {
+      console.error('Error finding user by ID:', error);
+      return null;
     }
-    
-    console.log('Hashing new password');
-    // Generate salt and hash password
-    const salt = await bcrypt.genSalt(config.bcryptSaltRounds);
-    this.password = await bcrypt.hash(this.password, salt);
-    next();
-  } catch (error: any) {
-    next(error);
   }
-});
 
-// Method to compare password for login
-UserSchema.methods.comparePassword = async function (candidatePassword: string): Promise<boolean> {
-  try {
-    console.log(`Comparing passwords - user: ${this.email}`);
-    console.log(`Stored hash: ${this.password.substring(0, 20)}...`);
-    
-    // Use bcrypt to compare the plain text password with the hash
-    const isMatch = await bcrypt.compare(candidatePassword, this.password);
-    console.log(`Password match result: ${isMatch}`);
-    return isMatch;
-  } catch (error) {
-    console.error('Password comparison error:', error);
-    throw new Error('Password comparison failed');
+  /**
+   * Find user by email
+   */
+  static async findByEmail(email: string): Promise<IUser | null> {
+    try {
+      // Find auth user by email
+      const { data: userData, error: userError } = await supabaseAdmin.auth.admin.listUsers({
+        filter: {
+          email: email
+        }
+      });
+
+      if (userError || userData.users.length === 0) return null;
+      
+      const userId = userData.users[0].id;
+
+      // Get profile
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+      if (error || !data) return null;
+      
+      return {
+        id: data.id,
+        name: data.name,
+        email: email,
+        avatar: data.avatar || undefined,
+        role: data.role as 'admin' | 'user' | 'team_leader' | 'team_member',
+        isActive: data.is_active,
+        teamId: data.team_id || undefined,
+        notificationPreferences: data.notification_preferences || undefined,
+        createdAt: new Date(data.created_at),
+        updatedAt: new Date(data.updated_at)
+      };
+    } catch (error) {
+      console.error('Error finding user by email:', error);
+      return null;
+    }
   }
-};
 
-// Method to generate JWT auth token
-UserSchema.methods.generateAuthToken = function (): string {
-  const payload = {
-    id: this._id,
-    email: this.email,
-    name: this.name,
-    role: this.role,
-  };
-  
-  const secret: Secret = config.jwtSecret;
-  // Cast expiresIn to string so TypeScript accepts it
-  const options: jwt.SignOptions = { 
-    expiresIn: config.jwtExpire as string | number
-  };
-  
-  return jwt.sign(payload, secret, options);
-};
+  /**
+   * Create new user
+   */
+  static async create(userData: {
+    email: string;
+    password: string;
+    name: string;
+    role?: 'admin' | 'user' | 'team_leader' | 'team_member';
+  }): Promise<IUser | null> {
+    try {
+      // Create auth user
+      const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+        email: userData.email,
+        password: userData.password,
+        email_confirm: true,
+        user_metadata: {
+          name: userData.name,
+          role: userData.role || 'team_member'
+        }
+      });
 
-// Method to generate refresh token
-UserSchema.methods.generateRefreshToken = function (): string {
-  const payload = {
-    id: this._id,
-  };
-  
-  const secret: Secret = config.jwtRefreshSecret;
-  // Cast expiresIn to string so TypeScript accepts it
-  const options: jwt.SignOptions = { 
-    expiresIn: config.jwtRefreshExpire as string | number 
-  };
-  
-  const refreshToken = jwt.sign(payload, secret, options);
-  
-  // Save refresh token to user
-  this.refreshToken = refreshToken;
-  
-  return refreshToken;
-};
+      if (authError || !authData.user) {
+        console.error('Error creating auth user:', authError);
+        return null;
+      }
 
-const User: Model<IUser> = mongoose.model<IUser>('User', UserSchema);
+      // Get the created profile
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', authData.user.id)
+        .single();
+
+      if (profileError || !profile) {
+        console.error('Error fetching created profile:', profileError);
+        return null;
+      }
+
+      return {
+        id: profile.id,
+        name: profile.name,
+        email: userData.email,
+        role: profile.role as 'admin' | 'user' | 'team_leader' | 'team_member',
+        isActive: profile.is_active,
+        teamId: profile.team_id || undefined,
+        notificationPreferences: profile.notification_preferences || undefined,
+        createdAt: new Date(profile.created_at),
+        updatedAt: new Date(profile.updated_at)
+      };
+    } catch (error) {
+      console.error('Error creating user:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Update user
+   */
+  static async update(userId: string, updateData: Partial<IUser>): Promise<IUser | null> {
+    try {
+      // Format data for Supabase column naming
+      const profileData: any = {
+        name: updateData.name,
+        avatar: updateData.avatar,
+        role: updateData.role,
+        is_active: updateData.isActive,
+        team_id: updateData.teamId,
+        notification_preferences: updateData.notificationPreferences,
+        updated_at: new Date().toISOString()
+      };
+
+      // Remove undefined fields
+      Object.keys(profileData).forEach(key => {
+        if (profileData[key] === undefined) delete profileData[key];
+      });
+
+      // Update profile
+      const { data, error } = await supabase
+        .from('profiles')
+        .update(profileData)
+        .eq('id', userId)
+        .select('*')
+        .single();
+
+      if (error || !data) {
+        console.error('Error updating user profile:', error);
+        return null;
+      }
+      
+      // Get email
+      const { data: userData, error: userError } = await supabaseAdmin.auth.admin.getUserById(userId);
+      if (userError) return null;
+
+      return {
+        id: data.id,
+        name: data.name,
+        email: userData.user?.email || '',
+        avatar: data.avatar || undefined,
+        role: data.role as 'admin' | 'user' | 'team_leader' | 'team_member',
+        isActive: data.is_active,
+        teamId: data.team_id || undefined,
+        notificationPreferences: data.notification_preferences || undefined,
+        createdAt: new Date(data.created_at),
+        updatedAt: new Date(data.updated_at)
+      };
+    } catch (error) {
+      console.error('Error updating user:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Generate JWT auth token
+   */
+  static generateAuthToken(user: IUser): string {
+    const payload = {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+    };
+    
+    const secret: Secret = config.jwtSecret;
+    const options: jwt.SignOptions = { 
+      expiresIn: typeof config.jwtExpire === 'string' ? config.jwtExpire : String(config.jwtExpire)
+    };
+    
+    return jwt.sign(payload, secret, options);
+  }
+
+  /**
+   * Generate refresh token
+   */
+  static generateRefreshToken(user: IUser): string {
+    const payload = {
+      id: user.id,
+    };
+    
+    const secret: Secret = config.jwtSecret;
+    const options: jwt.SignOptions = { 
+      expiresIn: '7d'
+    };
+    
+    return jwt.sign(payload, secret, options);
+  }
+
+  /**
+   * Reset password
+   */
+  static async resetPassword(userId: string, newPassword: string): Promise<boolean> {
+    try {
+      const { error } = await supabaseAdmin.auth.admin.updateUserById(
+        userId,
+        { password: newPassword }
+      );
+      
+      return !error;
+    } catch (error) {
+      console.error('Error resetting password:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Delete user
+   */
+  static async delete(userId: string): Promise<boolean> {
+    try {
+      const { error } = await supabaseAdmin.auth.admin.deleteUser(userId);
+      return !error;
+    } catch (error) {
+      console.error('Error deleting user:', error);
+      return false;
+    }
+  }
+}
 
 export default User; 

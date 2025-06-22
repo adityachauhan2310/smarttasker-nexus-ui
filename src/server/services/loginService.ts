@@ -1,8 +1,8 @@
 import { User } from '../models';
-import mongoose from 'mongoose';
-import bcrypt from 'bcrypt';
+import { supabaseAdmin } from '../config/database';
 import config from '../config/config';
 import { sanitizeRequestData } from '../utils/securityUtils';
+import { AuthError } from '@supabase/supabase-js';
 
 interface LoginResult {
   success: boolean;
@@ -27,14 +27,23 @@ export const authenticateUser = async (email: string, password: string): Promise
     const normalizedEmail = email.toLowerCase();
     
     try {
-      // Use direct MongoDB access to bypass any Mongoose hooks
-      const usersCollection = mongoose.connection.collection('users');
+      // Authenticate with Supabase
+      const { data, error } = await supabaseAdmin.auth.signInWithPassword({
+        email: normalizedEmail,
+        password: password
+      });
       
-      // Find user directly from the collection
-      const user = await usersCollection.findOne({ email: normalizedEmail });
-      
-      if (!user) {
-        console.log(`User not found: ${email}`);
+      if (error) {
+        console.log(`Authentication failed: ${error.message}`);
+        
+        if (error.message.includes('Email not confirmed')) {
+          return {
+            success: false,
+            message: 'Email not confirmed',
+            statusCode: 403
+          };
+        }
+        
         return {
           success: false,
           message: 'Invalid credentials',
@@ -42,8 +51,29 @@ export const authenticateUser = async (email: string, password: string): Promise
         };
       }
       
+      if (!data || !data.user || !data.session) {
+        console.log('No user data returned from Supabase');
+        return {
+          success: false,
+          message: 'Invalid credentials',
+          statusCode: 401
+        };
+      }
+      
+      // Get user profile data
+      const userProfile = await User.findById(data.user.id);
+      
+      if (!userProfile) {
+        console.error('User found in auth but not in profiles');
+        return {
+          success: false,
+          message: 'Authentication error',
+          statusCode: 500
+        };
+      }
+      
       // Check if user is active
-      if (!user.isActive) {
+      if (!userProfile.isActive) {
         console.log(`Inactive account: ${email}`);
         return {
           success: false,
@@ -52,55 +82,23 @@ export const authenticateUser = async (email: string, password: string): Promise
         };
       }
       
-      // Compare password directly using bcrypt
-      const isMatch = await bcrypt.compare(password, user.password);
-      console.log(`Password check for ${email}: ${isMatch ? 'match' : 'no match'}`);
-      
-      if (!isMatch) {
-        console.log(`Failed login attempt for user: ${email} - Password mismatch`);
-        return {
-          success: false,
-          message: 'Invalid credentials',
-          statusCode: 401
-        };
-      }
-      
-      // Now get the user with Mongoose to use model methods
-      const mongooseUser = await User.findById(user._id);
-      
-      if (!mongooseUser) {
-        console.error('User found in direct DB but not in Mongoose');
-        return {
-          success: false,
-          message: 'Authentication error',
-          statusCode: 500
-        };
-      }
-      
-      // Generate tokens
-      const token = mongooseUser.generateAuthToken();
-      const refreshToken = mongooseUser.generateRefreshToken();
-      
-      // Update user last login directly through MongoDB to avoid hooks
-      await usersCollection.updateOne(
-        { _id: user._id },
-        { $set: { lastLogin: new Date() } }
-      );
+      // Generate custom token (optional, since Supabase already provides tokens)
+      // const token = User.generateAuthToken(userProfile);
       
       console.log(`Login successful for user: ${email}`);
       
-      // Return success with user data and tokens
+      // Return success with user data and tokens from Supabase
       return {
         success: true,
         user: {
-          id: user._id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-          avatar: user.avatar,
+          id: userProfile.id,
+          name: userProfile.name,
+          email: data.user.email,
+          role: userProfile.role,
+          avatar: userProfile.avatar,
         },
-        token,
-        refreshToken,
+        token: data.session.access_token,
+        refreshToken: data.session.refresh_token,
         statusCode: 200
       };
       

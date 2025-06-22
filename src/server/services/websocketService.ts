@@ -3,7 +3,8 @@ import WebSocket from 'ws';
 import { WebSocketServer } from 'ws';
 import jwt from 'jsonwebtoken';
 import config from '../config/config';
-import User from '../models/User';
+import { User } from '../models/User';
+import { supabase } from '../config/database';
 
 interface AuthenticatedClient extends WebSocket {
   isAlive: boolean;
@@ -183,7 +184,7 @@ class WebSocketService {
       // Verify the token
       const decoded = jwt.verify(payload.token, config.jwtSecret) as { id: string };
       
-      // Get the user from the database
+      // Get the user from Supabase
       const user = await User.findById(decoded.id);
       if (!user) {
         client.send(JSON.stringify({
@@ -194,7 +195,7 @@ class WebSocketService {
       }
       
       // Store user ID in the client
-      client.userId = user._id.toString();
+      client.userId = user.id.toString();
       
       // Store team IDs in the client if user has a team
       client.teamIds = user.teamId ? [user.teamId.toString()] : [];
@@ -219,7 +220,7 @@ class WebSocketService {
       client.send(JSON.stringify({
         type: 'authenticated',
         payload: {
-          userId: user._id.toString(),
+          userId: user.id.toString(),
           name: user.name,
         },
       }));
@@ -271,27 +272,31 @@ class WebSocketService {
 
   /**
    * Start the heartbeat mechanism
+   * This helps detect and clean up disconnected clients
    */
   private startHeartbeat(): void {
-    // Send pings to all clients every 30 seconds
+    // Check for disconnected clients every 30 seconds
     this.heartbeatInterval = setInterval(() => {
-      if (!this.wss) return;
-      
-      this.wss.clients.forEach((ws: WebSocket) => {
-        const client = ws as AuthenticatedClient;
-        
-        if (client.isAlive === false) {
-          // Terminate clients that didn't respond to the last ping
-          return client.terminate();
-        }
-        
-        // Mark as not alive until we get a pong
-        client.isAlive = false;
-        client.ping();
-        
-        // Reset ping timeout for this client
-        this.setupPingTimeout(client);
-      });
+      if (this.wss) {
+        this.wss.clients.forEach((ws) => {
+          const client = ws as AuthenticatedClient;
+          
+          if (!client.isAlive) {
+            // Client failed to respond to ping, terminate connection
+            return client.terminate();
+          }
+          
+          // Mark client as not alive, will be marked alive when pong is received
+          client.isAlive = false;
+          
+          // Send ping
+          try {
+            client.ping();
+          } catch (error) {
+            console.error('Error sending ping:', error);
+          }
+        });
+      }
     }, 30000);
   }
 
@@ -300,27 +305,23 @@ class WebSocketService {
    * @param client WebSocket client
    */
   private setupPingTimeout(client: AuthenticatedClient): void {
-    // Clear existing timeout
+    // Clear existing timeout if present
     if (client.pingTimeout) {
       clearTimeout(client.pingTimeout);
     }
     
-    // Set up new timeout
+    // Set new timeout - terminate connection if no pong received within 5 seconds
     client.pingTimeout = setTimeout(() => {
       client.terminate();
-    }, 45000); // 45 seconds timeout (longer than ping interval)
+    }, 5000);
   }
 
   /**
    * Get the number of connected clients
    */
   public getConnectedClientsCount(): number {
-    if (!this.wss) return 0;
-    return this.wss.clients.size;
+    return this.wss ? this.wss.clients.size : 0;
   }
 }
 
-// Create a singleton instance
-const websocketService = new WebSocketService();
-
-export default websocketService; 
+export default new WebSocketService(); 

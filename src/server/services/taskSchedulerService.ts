@@ -1,4 +1,4 @@
-import { RecurringTask } from '../models';
+import { RecurringTask, IRecurringTask } from '../models';
 import { generateTasksForRecurringPattern } from '../controllers/recurringTaskController';
 
 /**
@@ -56,24 +56,26 @@ export const processRecurringTasks = async (): Promise<void> => {
   console.log(`[${new Date().toISOString()}] Running recurring task processor`);
 
   try {
-    // Get all active recurring tasks where nextGenerationDate is in the past
-    const now = new Date();
-    const recurringTasksToProcess = await RecurringTask.find({
-      paused: false,
-      nextGenerationDate: { $lte: now }
-    });
+    // Get all active recurring tasks where next_generation_date is in the past
+    const now = new Date().toISOString();
+    const { data: recurringTasksToProcess, error } = await RecurringTask.findTasksForGeneration(now);
 
-    console.log(`Found ${recurringTasksToProcess.length} recurring tasks to process`);
+    if (error) {
+      console.error('Error finding tasks to process:', error);
+      return;
+    }
+
+    console.log(`Found ${recurringTasksToProcess?.length || 0} recurring tasks to process`);
 
     // Process each task
-    for (const recurringTask of recurringTasksToProcess) {
+    for (const recurringTask of recurringTasksToProcess || []) {
       try {
         const tasks = await generateTasksForRecurringPattern(recurringTask);
         console.log(
-          `Generated ${tasks.length} task(s) for recurring pattern "${recurringTask.title}" (ID: ${recurringTask._id})`
+          `Generated ${tasks.length} task(s) for recurring pattern "${recurringTask.title}" (ID: ${recurringTask.id})`
         );
       } catch (taskError) {
-        console.error(`Error generating tasks for recurring pattern ${recurringTask._id}:`, taskError);
+        console.error(`Error generating tasks for recurring pattern ${recurringTask.id}:`, taskError);
       }
     }
 
@@ -86,8 +88,8 @@ export const processRecurringTasks = async (): Promise<void> => {
 
 /**
  * Run a maintenance check on all recurring tasks
- * - Update nextGenerationDate for any tasks without one
- * - Check for tasks that have reached their end date or maxOccurrences
+ * - Update next_generation_date for any tasks without one
+ * - Check for tasks that have reached their end date or max_occurrences
  * - Clean up any inconsistencies
  */
 export const runRecurringTaskMaintenance = async (): Promise<void> => {
@@ -95,44 +97,51 @@ export const runRecurringTaskMaintenance = async (): Promise<void> => {
   
   try {
     // Find tasks with missing next generation date
-    const tasksWithoutNextDate = await RecurringTask.find({
-      paused: false,
-      nextGenerationDate: { $exists: false }
-    });
+    const { data: tasksWithoutNextDate, error } = await RecurringTask.findTasksWithoutNextDate();
     
-    console.log(`Found ${tasksWithoutNextDate.length} tasks with missing next generation date`);
-    
-    // Fix tasks without next generation date
-    for (const task of tasksWithoutNextDate) {
-      task.nextGenerationDate = task.calculateNextOccurrence();
-      await task.save();
-      console.log(`Updated nextGenerationDate for task ${task._id}`);
+    if (error) {
+      console.error('Error finding tasks without next generation date:', error);
+      return;
     }
     
-    // Check for tasks that have reached their maxOccurrences
-    const tasksWithLimits = await RecurringTask.find({
-      paused: false,
-      maxOccurrences: { $exists: true, $ne: null }
-    });
+    console.log(`Found ${tasksWithoutNextDate?.length || 0} tasks with missing next generation date`);
     
-    for (const task of tasksWithLimits) {
-      if (task.tasksGenerated >= (task.maxOccurrences || 0)) {
-        task.paused = true;
-        await task.save();
-        console.log(`Paused task ${task._id} as it reached maximum occurrences (${task.maxOccurrences})`);
+    // Fix tasks without next generation date
+    for (const task of tasksWithoutNextDate || []) {
+      const nextDate = RecurringTask.calculateNextOccurrence(task);
+      await RecurringTask.update(task.id, {
+        next_generation_date: nextDate.toISOString()
+      });
+      console.log(`Updated next_generation_date for task ${task.id}`);
+    }
+    
+    // Check for tasks that have reached their max_occurrences
+    const { data: tasksWithLimits, error: limitsError } = await RecurringTask.findTasksWithLimits();
+    
+    if (limitsError) {
+      console.error('Error finding tasks with limits:', limitsError);
+      return;
+    }
+    
+    for (const task of tasksWithLimits || []) {
+      if (task.tasks_generated >= (task.max_occurrences || 0)) {
+        await RecurringTask.update(task.id, { paused: true });
+        console.log(`Paused task ${task.id} as it reached maximum occurrences (${task.max_occurrences})`);
       }
     }
     
     // Check for tasks that have passed their end date
-    const tasksWithEndDate = await RecurringTask.find({
-      paused: false,
-      endDate: { $exists: true, $lt: new Date() }
-    });
+    const now = new Date().toISOString();
+    const { data: tasksWithEndDate, error: endDateError } = await RecurringTask.findTasksPastEndDate(now);
     
-    for (const task of tasksWithEndDate) {
-      task.paused = true;
-      await task.save();
-      console.log(`Paused task ${task._id} as it passed its end date (${task.endDate})`);
+    if (endDateError) {
+      console.error('Error finding tasks past end date:', endDateError);
+      return;
+    }
+    
+    for (const task of tasksWithEndDate || []) {
+      await RecurringTask.update(task.id, { paused: true });
+      console.log(`Paused task ${task.id} as it passed its end date (${task.end_date})`);
     }
     
     console.log('Recurring task maintenance completed');

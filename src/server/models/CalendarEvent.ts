@@ -1,126 +1,206 @@
-import mongoose, { Schema, Document, Model } from 'mongoose';
+import { supabase } from '../config/database';
 
-export interface ICalendarEvent extends Document {
+export type EventType = 'meeting' | 'deadline' | 'task' | 'event' | 'maintenance' | 'audit' | 'hr';
+export type EventPriority = 'high' | 'medium' | 'low';
+export type EventStatus = 'confirmed' | 'tentative' | 'cancelled';
+
+export interface ICalendarEvent {
+  id: string;
   title: string;
   description?: string;
-  date: Date;
+  date: string;
   time?: string;
   duration?: number;
-  type: 'meeting' | 'deadline' | 'task' | 'event' | 'maintenance' | 'audit' | 'hr';
-  priority?: 'high' | 'medium' | 'low';
-  impact?: 'high' | 'medium' | 'low';
-  attendees?: mongoose.Types.ObjectId[];
-  assigneeId?: mongoose.Types.ObjectId;
-  assignedById?: mongoose.Types.ObjectId;
-  teamId?: mongoose.Types.ObjectId;
-  taskId?: mongoose.Types.ObjectId;
-  status?: 'confirmed' | 'tentative' | 'cancelled';
-  createdAt: Date;
-  updatedAt: Date;
+  type: EventType;
+  priority?: EventPriority;
+  impact?: EventPriority;
+  attendees?: string[];
+  assignee_id?: string;
+  assigned_by_id?: string;
+  team_id?: string;
+  task_id?: string;
+  status?: EventStatus;
+  created_at: string;
+  updated_at: string;
 }
 
-interface CalendarEventModel extends Model<ICalendarEvent> {
-  // Static methods if needed
-}
+export class CalendarEvent {
+  /**
+   * Find calendar event by ID
+   */
+  static async findById(id: string): Promise<ICalendarEvent | null> {
+    try {
+      const { data, error } = await supabase
+        .from('calendar_events')
+        .select('*')
+        .eq('id', id)
+        .single();
 
-const CalendarEventSchema: Schema = new Schema(
-  {
-    title: {
-      type: String,
-      required: [true, 'Event title is required'],
-      trim: true,
-      maxlength: [200, 'Event title cannot exceed 200 characters']
-    },
-    description: {
-      type: String,
-      trim: true,
-      maxlength: [1000, 'Event description cannot exceed 1000 characters']
-    },
-    date: {
-      type: Date,
-      required: [true, 'Event date is required']
-    },
-    time: {
-      type: String,
-      validate: {
-        validator: function(v: string) {
-          // Basic time format validation (HH:MM or HH:MM AM/PM)
-          return /^([01]?[0-9]|2[0-3]):[0-5][0-9](\s[AP]M)?$/.test(v);
-        },
-        message: props => `${props.value} is not a valid time format`
-      }
-    },
-    duration: {
-      type: Number,
-      min: [1, 'Duration must be at least 1 minute'],
-      max: [1440, 'Duration cannot exceed 24 hours (1440 minutes)']
-    },
-    type: {
-      type: String,
-      required: [true, 'Event type is required'],
-      enum: {
-        values: ['meeting', 'deadline', 'task', 'event', 'maintenance', 'audit', 'hr'],
-        message: '{VALUE} is not a valid event type'
-      },
-      default: 'event'
-    },
-    priority: {
-      type: String,
-      enum: {
-        values: ['high', 'medium', 'low'],
-        message: '{VALUE} is not a valid priority level'
-      },
-      default: 'medium'
-    },
-    impact: {
-      type: String,
-      enum: {
-        values: ['high', 'medium', 'low'],
-        message: '{VALUE} is not a valid impact level'
-      }
-    },
-    attendees: [{
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User'
-    }],
-    assigneeId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User'
-    },
-    assignedById: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User'
-    },
-    teamId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Team'
-    },
-    taskId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Task'
-    },
-    status: {
-      type: String,
-      enum: {
-        values: ['confirmed', 'tentative', 'cancelled'],
-        message: '{VALUE} is not a valid event status'
-      },
-      default: 'confirmed'
+      if (error || !data) return null;
+      return data as ICalendarEvent;
+    } catch (error) {
+      console.error('Error finding calendar event by ID:', error);
+      return null;
     }
-  },
-  {
-    timestamps: true,
-    toJSON: { virtuals: true },
-    toObject: { virtuals: true }
   }
-);
 
-// Indexes for efficient querying
-CalendarEventSchema.index({ date: 1 });
-CalendarEventSchema.index({ assigneeId: 1, date: 1 });
-CalendarEventSchema.index({ teamId: 1, date: 1 });
-CalendarEventSchema.index({ type: 1, date: 1 });
+  /**
+   * Create new calendar event
+   */
+  static async create(eventData: Partial<ICalendarEvent>): Promise<ICalendarEvent | null> {
+    try {
+      // Set default values
+      const data = {
+        ...eventData,
+        status: eventData.status || 'confirmed',
+        priority: eventData.priority || 'medium',
+        type: eventData.type || 'event'
+      };
 
-export const CalendarEvent: CalendarEventModel = mongoose.model<ICalendarEvent, CalendarEventModel>('CalendarEvent', CalendarEventSchema);
+      const { data: newEvent, error } = await supabase
+        .from('calendar_events')
+        .insert(data)
+        .select()
+        .single();
 
-export default CalendarEvent; 
+      if (error) {
+        console.error('Error creating calendar event:', error);
+        return null;
+      }
+
+      return newEvent as ICalendarEvent;
+    } catch (error) {
+      console.error('Error creating calendar event:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Update calendar event
+   */
+  static async update(id: string, updateData: Partial<ICalendarEvent>): Promise<ICalendarEvent | null> {
+    try {
+      const { data, error } = await supabase
+        .from('calendar_events')
+        .update(updateData)
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error updating calendar event:', error);
+        return null;
+      }
+
+      return data as ICalendarEvent;
+    } catch (error) {
+      console.error('Error updating calendar event:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Delete calendar event
+   */
+  static async delete(id: string): Promise<boolean> {
+    try {
+      const { error } = await supabase
+        .from('calendar_events')
+        .delete()
+        .eq('id', id);
+
+      return !error;
+    } catch (error) {
+      console.error('Error deleting calendar event:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Get events by date range
+   */
+  static async getByDateRange(startDate: string, endDate: string): Promise<ICalendarEvent[]> {
+    try {
+      const { data, error } = await supabase
+        .from('calendar_events')
+        .select('*')
+        .gte('date', startDate)
+        .lte('date', endDate)
+        .order('date', { ascending: true });
+
+      if (error) {
+        console.error('Error getting calendar events by date range:', error);
+        return [];
+      }
+
+      return data as ICalendarEvent[];
+    } catch (error) {
+      console.error('Error getting calendar events by date range:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get events by team
+   */
+  static async getByTeam(teamId: string, startDate?: string, endDate?: string): Promise<ICalendarEvent[]> {
+    try {
+      let query = supabase
+        .from('calendar_events')
+        .select('*')
+        .eq('team_id', teamId);
+      
+      if (startDate) {
+        query = query.gte('date', startDate);
+      }
+      
+      if (endDate) {
+        query = query.lte('date', endDate);
+      }
+      
+      const { data, error } = await query.order('date', { ascending: true });
+
+      if (error) {
+        console.error('Error getting calendar events by team:', error);
+        return [];
+      }
+
+      return data as ICalendarEvent[];
+    } catch (error) {
+      console.error('Error getting calendar events by team:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get events by user
+   */
+  static async getByUser(userId: string, startDate?: string, endDate?: string): Promise<ICalendarEvent[]> {
+    try {
+      let query = supabase
+        .from('calendar_events')
+        .select('*')
+        .or(`assignee_id.eq.${userId},attendees.cs.{${userId}}`);
+      
+      if (startDate) {
+        query = query.gte('date', startDate);
+      }
+      
+      if (endDate) {
+        query = query.lte('date', endDate);
+      }
+      
+      const { data, error } = await query.order('date', { ascending: true });
+
+      if (error) {
+        console.error('Error getting calendar events by user:', error);
+        return [];
+      }
+
+      return data as ICalendarEvent[];
+    } catch (error) {
+      console.error('Error getting calendar events by user:', error);
+      return [];
+    }
+  }
+}

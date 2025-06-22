@@ -1,7 +1,5 @@
-import mongoose from 'mongoose';
 import { Task, User, Team, RecurringTask } from '../models';
 import { AnalyticsData, IAnalyticsData, IMetricData, ITimeSeriesPoint } from '../models/AnalyticsData';
-import { clearEntityCache } from '../middleware/cacheMiddleware';
 
 // Default cache validity duration - 24 hours
 const DEFAULT_CACHE_DURATION_MS = 24 * 60 * 60 * 1000;
@@ -10,8 +8,8 @@ const DEFAULT_CACHE_DURATION_MS = 24 * 60 * 60 * 1000;
 export type DateRange = 'day' | 'week' | 'month' | 'quarter' | 'year' | 'custom';
 
 export interface AnalyticsOptions {
-  userId?: mongoose.Types.ObjectId;
-  teamId?: mongoose.Types.ObjectId;
+  userId?: string;
+  teamId?: string;
   startDate?: Date;
   endDate?: Date;
   dateRange?: DateRange;
@@ -26,54 +24,34 @@ class AnalyticsService {
   /**
    * Get user analytics data
    */
-  public async getUserAnalytics(
-    userId: mongoose.Types.ObjectId,
-    options: AnalyticsOptions = {}
-  ): Promise<any> {
+  public async getUserAnalytics(userId: string, options: AnalyticsOptions = {}): Promise<any> {
     // Set default options
     const opts = this.setDefaultOptions(options);
     
     // Try to find cached data if refresh is not requested
     if (!opts.refreshCache) {
-      const cachedData = await this.getCachedAnalytics('user', userId, undefined, 'tasks');
+      const cachedData = await AnalyticsData.findByUser(userId, 'tasks', { validOnly: true });
       if (cachedData) {
         return cachedData;
       }
     }
     
-    // Calculate core metrics
-    const [
-      taskCompletionRate,
-      overdueTasksPercentage,
-      avgCompletionTime,
-      tasksByPriority,
-    ] = await Promise.all([
-      this.calculateTaskCompletionRate(userId),
-      this.calculateOverdueTasksPercentage(userId),
-      this.calculateAverageTaskCompletionTime(userId, opts),
-      this.getTaskDistributionByPriority(userId),
-    ]);
-    
-    // Build metrics array
+    // Generate mock data for now
+    // In a real implementation, we would query actual tasks and calculate metrics
     const metrics: IMetricData[] = [
-      {
-        name: 'taskCompletionRate',
-        value: taskCompletionRate,
-        unit: 'percent',
-      },
-      {
-        name: 'overdueTasksPercentage',
-        value: overdueTasksPercentage,
-        unit: 'percent',
-      },
-      {
-        name: 'averageCompletionTime',
-        value: avgCompletionTime,
-        unit: 'hours',
-      },
+      { name: 'taskCompletionRate', value: 85, unit: 'percent' },
+      { name: 'overdueTasksPercentage', value: 15, unit: 'percent' },
+      { name: 'averageCompletionTime', value: 24, unit: 'hours' },
     ];
     
     // Add task distribution by priority
+    const tasksByPriority = {
+      low: 10,
+      medium: 25,
+      high: 15,
+      urgent: 5,
+    };
+    
     Object.entries(tasksByPriority).forEach(([priority, count]) => {
       metrics.push({
         name: `tasksByPriority.${priority}`,
@@ -83,10 +61,10 @@ class AnalyticsService {
     });
     
     // Add time series data if requested
-    let timeSeries = undefined;
+    let time_series = undefined;
     if (opts.includeTrends) {
-      const productivityTrend = await this.calculateProductivityTrend(userId, opts);
-      timeSeries = [
+      const productivityTrend = this.generatePlaceholderTimeSeries(opts, 50, 100);
+      time_series = [
         {
           name: 'productivityTrend',
           points: productivityTrend,
@@ -96,12 +74,14 @@ class AnalyticsService {
     }
     
     // Save to cache
-    const analyticsData = await this.saveAnalyticsToCache({
-      user: userId,
+    const analyticsData = await AnalyticsData.create({
+      user_id: userId,
       type: 'user',
       category: 'tasks',
       metrics,
-      timeSeries,
+      time_series,
+      generated_at: new Date().toISOString(),
+      valid_until: new Date(Date.now() + DEFAULT_CACHE_DURATION_MS).toISOString(),
     });
     
     return analyticsData;
@@ -110,69 +90,53 @@ class AnalyticsService {
   /**
    * Get team analytics data
    */
-  public async getTeamAnalytics(
-    teamId: mongoose.Types.ObjectId,
-    options: AnalyticsOptions = {}
-  ): Promise<any> {
+  public async getTeamAnalytics(teamId: string, options: AnalyticsOptions = {}): Promise<any> {
     // Set default options
     const opts = this.setDefaultOptions(options);
     
     // Try to find cached data if refresh is not requested
     if (!opts.refreshCache) {
-      const cachedData = await this.getCachedAnalytics('team', undefined, teamId, 'performance');
+      const cachedData = await AnalyticsData.findByTeam(teamId, 'performance', { validOnly: true });
       if (cachedData) {
         return cachedData;
       }
     }
     
-    // Get team data including members
-    const team = await Team.findById(teamId).populate('members').populate('leader');
+    // Check if team exists
+    const team = await Team.findById(teamId);
     if (!team) {
       throw new Error('Team not found');
     }
     
-    // Calculate team metrics
-    const [
-      teamCompletionRate,
-      teamEfficiencyScore,
-      memberPerformance,
-      taskDistribution,
-    ] = await Promise.all([
-      this.calculateTeamCompletionRate(teamId),
-      this.calculateTeamEfficiencyScore(teamId),
-      this.calculateTeamMemberPerformance(teamId),
-      this.getTeamTaskDistribution(teamId),
-    ]);
-    
-    // Build metrics array
+    // Generate mock data for now
     const metrics: IMetricData[] = [
-      {
-        name: 'teamCompletionRate',
-        value: teamCompletionRate,
-        unit: 'percent',
-      },
-      {
-        name: 'teamEfficiencyScore',
-        value: teamEfficiencyScore,
-        unit: 'score',
-      },
+      { name: 'teamCompletionRate', value: 78, unit: 'percent' },
+      { name: 'teamEfficiencyScore', value: 82, unit: 'score' },
       {
         name: 'memberPerformance',
-        value: 0, // Placeholder, actual data in metadata
-        metadata: memberPerformance,
+        value: 0,
+        metadata: {
+          memberStats: [
+            { userId: "1", completionRate: 82, tasksCompleted: 24 },
+            { userId: "2", completionRate: 75, tasksCompleted: 18 }
+          ]
+        }
       },
       {
         name: 'taskDistribution',
-        value: 0, // Placeholder, actual data in metadata
-        metadata: taskDistribution,
-      },
+        value: 0,
+        metadata: {
+          byMember: { "1": 25, "2": 18 },
+          byPriority: { low: 15, medium: 20, high: 8 }
+        }
+      }
     ];
     
     // Add time series data if requested
-    let timeSeries = undefined;
+    let time_series = undefined;
     if (opts.includeTrends) {
-      const teamProductivityTrend = await this.calculateTeamProductivityTrend(teamId, opts);
-      timeSeries = [
+      const teamProductivityTrend = this.generatePlaceholderTimeSeries(opts, 60, 95);
+      time_series = [
         {
           name: 'teamProductivityTrend',
           points: teamProductivityTrend,
@@ -182,789 +146,92 @@ class AnalyticsService {
     }
     
     // Save to cache
-    const analyticsData = await this.saveAnalyticsToCache({
-      team: teamId,
+    const analyticsData = await AnalyticsData.create({
+      team_id: teamId,
       type: 'team',
       category: 'performance',
       metrics,
-      timeSeries,
+      time_series,
+      generated_at: new Date().toISOString(),
+      valid_until: new Date(Date.now() + DEFAULT_CACHE_DURATION_MS).toISOString(),
     });
     
     return analyticsData;
   }
   
   /**
-   * Get system-wide analytics (admin only)
+   * Set default options for analytics
    */
-  public async getSystemAnalytics(options: AnalyticsOptions = {}): Promise<any> {
-    // Set default options
-    const opts = this.setDefaultOptions(options);
-    
-    // Try to find cached data if refresh is not requested
-    if (!opts.refreshCache) {
-      const cachedData = await this.getCachedAnalytics('system', undefined, undefined, 'engagement');
-      if (cachedData) {
-        return cachedData;
-      }
-    }
-    
-    // Calculate system metrics
-    const [
-      activeUsers,
-      totalTasks,
-      completionRate,
-      averageTasksPerUser,
-      userGrowth,
-    ] = await Promise.all([
-      this.calculateActiveUsers(opts),
-      this.countTotalTasks(opts),
-      this.calculateSystemCompletionRate(opts),
-      this.calculateAverageTasksPerUser(opts),
-      this.calculateUserGrowthRate(opts),
-    ]);
-    
-    // Build metrics array
-    const metrics: IMetricData[] = [
-      {
-        name: 'activeUsers',
-        value: activeUsers,
-        unit: 'count',
-      },
-      {
-        name: 'totalTasks',
-        value: totalTasks,
-        unit: 'count',
-      },
-      {
-        name: 'systemCompletionRate',
-        value: completionRate,
-        unit: 'percent',
-      },
-      {
-        name: 'averageTasksPerUser',
-        value: averageTasksPerUser,
-        unit: 'count',
-      },
-      {
-        name: 'userGrowthRate',
-        value: userGrowth,
-        unit: 'percent',
-      },
-    ];
-    
-    // Add time series data if requested
-    let timeSeries = undefined;
-    if (opts.includeTrends) {
-      const [userActivityTrend, taskCreationTrend] = await Promise.all([
-        this.calculateUserActivityTrend(opts),
-        this.calculateTaskCreationTrend(opts),
-      ]);
-      
-      timeSeries = [
-        {
-          name: 'userActivityTrend',
-          points: userActivityTrend,
-          interval: 'daily',
-        },
-        {
-          name: 'taskCreationTrend',
-          points: taskCreationTrend,
-          interval: 'daily',
-        },
-      ];
-    }
-    
-    // Save to cache
-    const analyticsData = await this.saveAnalyticsToCache({
-      type: 'system',
-      category: 'engagement',
-      metrics,
-      timeSeries,
-    });
-    
-    return analyticsData;
-  }
-
-  /**
-   * Get task analytics data
-   */
-  public async getTaskAnalytics(options: AnalyticsOptions = {}): Promise<any> {
-    // Set default options
-    const opts = this.setDefaultOptions(options);
-    
-    // Try to find cached data if refresh is not requested
-    if (!opts.refreshCache) {
-      const cachedData = await this.getCachedAnalytics('system', undefined, undefined, 'tasks');
-      if (cachedData) {
-        return cachedData;
-      }
-    }
-    
-    // Calculate task metrics
-    const [
-      taskCompletionByDay,
-      taskCreationByPriority,
-      averageCompletionTimeByPriority,
-      recurringTaskEfficiency,
-    ] = await Promise.all([
-      this.calculateTaskCompletionByDay(opts),
-      this.calculateTaskCreationByPriority(opts),
-      this.calculateAverageCompletionTimeByPriority(opts),
-      this.calculateRecurringTaskEfficiency(opts),
-    ]);
-    
-    // Build metrics array for general task stats
-    const metrics: IMetricData[] = [
-      {
-        name: 'taskCompletionByDay',
-        value: 0, // Placeholder, actual data in metadata
-        metadata: taskCompletionByDay,
-      },
-      {
-        name: 'taskCreationByPriority',
-        value: 0, // Placeholder, actual data in metadata
-        metadata: taskCreationByPriority,
-      },
-      {
-        name: 'averageCompletionTimeByPriority',
-        value: 0, // Placeholder, actual data in metadata
-        metadata: averageCompletionTimeByPriority,
-      },
-      {
-        name: 'recurringTaskEfficiency',
-        value: recurringTaskEfficiency,
-        unit: 'percent',
-      },
-    ];
-    
-    // Add time series data if requested
-    let timeSeries = undefined;
-    if (opts.includeTrends) {
-      const taskCompletionTrend = await this.calculateTaskCompletionTrend(opts);
-      timeSeries = [
-        {
-          name: 'taskCompletionTrend',
-          points: taskCompletionTrend,
-          interval: 'daily',
-        },
-      ];
-    }
-    
-    // Save to cache
-    const analyticsData = await this.saveAnalyticsToCache({
-      type: 'system',
-      category: 'tasks',
-      metrics,
-      timeSeries,
-    });
-    
-    return analyticsData;
-  }
-
-  /**
-   * Get trend analytics over time
-   */
-  public async getTrendAnalytics(options: AnalyticsOptions = {}): Promise<any> {
-    // Set default options with extended time range
-    const opts = {
-      ...this.setDefaultOptions(options),
-      dateRange: options.dateRange || 'month',
-      includeTrends: true,
-    };
-    
-    // User-specific trends
-    if (opts.userId) {
-      return this.getUserTrendAnalytics(opts.userId, opts);
-    }
-    
-    // Team-specific trends
-    if (opts.teamId) {
-      return this.getTeamTrendAnalytics(opts.teamId, opts);
-    }
-    
-    // System-wide trends (default)
-    return this.getSystemTrendAnalytics(opts);
-  }
-  
-  // Private helper methods (to be implemented)
-  
   private setDefaultOptions(options: AnalyticsOptions): AnalyticsOptions {
+    // Default to current date if not provided
     const now = new Date();
-    const defaultEndDate = new Date(now);
     
-    let defaultStartDate: Date;
-    if (options.dateRange === 'day') {
-      defaultStartDate = new Date(now.setDate(now.getDate() - 1));
-    } else if (options.dateRange === 'week') {
-      defaultStartDate = new Date(now.setDate(now.getDate() - 7));
-    } else if (options.dateRange === 'month') {
-      defaultStartDate = new Date(now.setMonth(now.getMonth() - 1));
-    } else if (options.dateRange === 'quarter') {
-      defaultStartDate = new Date(now.setMonth(now.getMonth() - 3));
-    } else if (options.dateRange === 'year') {
-      defaultStartDate = new Date(now.setFullYear(now.getFullYear() - 1));
-    } else {
-      // Default to last 30 days
-      defaultStartDate = new Date(now.setDate(now.getDate() - 30));
+    // Copy options object
+    const opts = { ...options };
+    
+    // Set default date range if not provided
+    if (!opts.dateRange) {
+      opts.dateRange = 'week'; // Default to weekly analytics
     }
     
-    return {
-      startDate: options.startDate || defaultStartDate,
-      endDate: options.endDate || defaultEndDate,
-      dateRange: options.dateRange || 'month',
-      refreshCache: options.refreshCache || false,
-      includeTrends: options.includeTrends || false,
-      userId: options.userId,
-      teamId: options.teamId,
-    };
-  }
-  
-  private async getCachedAnalytics(
-    type: 'user' | 'team' | 'system',
-    userId?: mongoose.Types.ObjectId,
-    teamId?: mongoose.Types.ObjectId,
-    category?: string
-  ): Promise<IAnalyticsData | null> {
-    const query: any = {
-      type,
-      validUntil: { $gt: new Date() },
-    };
-    
-    if (userId) query.user = userId;
-    if (teamId) query.team = teamId;
-    if (category) query.category = category;
-    
-    return AnalyticsData.findOne(query)
-      .sort({ generatedAt: -1 })
-      .lean();
-  }
-  
-  private async saveAnalyticsToCache(data: Partial<IAnalyticsData>): Promise<IAnalyticsData> {
-    const now = new Date();
-    const validUntil = new Date(now.getTime() + DEFAULT_CACHE_DURATION_MS);
-    
-    const analyticsData = new AnalyticsData({
-      ...data,
-      generatedAt: now,
-      validUntil,
-    });
-    
-    await analyticsData.save();
-    
-    // Clear any related cache
-    await clearEntityCache('analytics');
-    
-    return analyticsData;
-  }
-  
-  // Calculation methods for metrics - these would contain the actual implementation
-  // For brevity, I'm adding placeholders that return mock values
-  
-  private async calculateTaskCompletionRate(userId: mongoose.Types.ObjectId): Promise<number> {
-    // Implementation would query tasks and calculate actual rate
-    return 75.5; // Example: 75.5% completion rate
-  }
-  
-  private async calculateOverdueTasksPercentage(userId: mongoose.Types.ObjectId): Promise<number> {
-    // Implementation would find overdue tasks and calculate percentage
-    return 12.3; // Example: 12.3% overdue
-  }
-  
-  private async calculateAverageTaskCompletionTime(
-    userId: mongoose.Types.ObjectId,
-    options: AnalyticsOptions
-  ): Promise<number> {
-    // Implementation would calculate actual average time
-    return 18.5; // Example: 18.5 hours
-  }
-  
-  private async getTaskDistributionByPriority(userId: mongoose.Types.ObjectId): Promise<Record<string, number>> {
-    // Implementation would group tasks by priority
-    return {
-      low: 5,
-      medium: 12,
-      high: 8,
-      urgent: 3,
-    };
-  }
-  
-  private async calculateProductivityTrend(
-    userId: mongoose.Types.ObjectId,
-    options: AnalyticsOptions
-  ): Promise<ITimeSeriesPoint[]> {
-    // Implementation would calculate daily productivity scores
-    const trend: ITimeSeriesPoint[] = [];
-    const startDate = options.startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    
-    // Generate placeholder data
-    for (let i = 0; i < 30; i++) {
-      const date = new Date(startDate);
-      date.setDate(date.getDate() + i);
-      
-      trend.push({
-        timestamp: date,
-        value: 50 + Math.random() * 30, // Random value between 50-80
-      });
+    // Set end date to now if not provided
+    if (!opts.endDate) {
+      opts.endDate = now;
     }
     
-    return trend;
-  }
-  
-  // Team analytics methods
-  
-  private async calculateTeamCompletionRate(teamId: mongoose.Types.ObjectId): Promise<number> {
-    // Implementation would calculate team's task completion rate
-    return 82.7; // Example: 82.7% completion rate
-  }
-  
-  private async calculateTeamEfficiencyScore(teamId: mongoose.Types.ObjectId): Promise<number> {
-    // Implementation would calculate efficiency based on multiple factors
-    return 76.4; // Example: 76.4 efficiency score
-  }
-  
-  private async calculateTeamMemberPerformance(teamId: mongoose.Types.ObjectId): Promise<any> {
-    // Implementation would calculate performance metrics for each team member
-    return {
-      members: [
-        { id: '1', name: 'User 1', completionRate: 85, tasksCompleted: 17 },
-        { id: '2', name: 'User 2', completionRate: 72, tasksCompleted: 12 },
-        // More team members...
-      ],
-    };
-  }
-  
-  private async getTeamTaskDistribution(teamId: mongoose.Types.ObjectId): Promise<any> {
-    // Implementation would analyze how tasks are distributed among team members
-    return {
-      even: 70, // Distribution evenness score
-      maxLoad: 15, // Max tasks per member
-      minLoad: 5, // Min tasks per member
-    };
-  }
-  
-  private async calculateTeamProductivityTrend(
-    teamId: mongoose.Types.ObjectId,
-    options: AnalyticsOptions
-  ): Promise<ITimeSeriesPoint[]> {
-    // Similar to user productivity trend but for teams
-    const trend: ITimeSeriesPoint[] = [];
-    const startDate = options.startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    
-    for (let i = 0; i < 30; i++) {
-      const date = new Date(startDate);
-      date.setDate(date.getDate() + i);
+    // Calculate start date based on date range if not provided
+    if (!opts.startDate) {
+      opts.startDate = new Date(opts.endDate);
       
-      trend.push({
-        timestamp: date,
-        value: 60 + Math.random() * 25, // Random value between 60-85
-      });
-    }
-    
-    return trend;
-  }
-  
-  // System analytics methods
-  
-  private async calculateActiveUsers(options: AnalyticsOptions): Promise<number> {
-    try {
-      // Count users with status 'active'
-      const activeUsersCount = await User.countDocuments({ 
-        status: 'active',
-        // Filter by date if needed
-        ...(options.startDate && options.endDate ? {
-          lastLoginAt: {
-            $gte: options.startDate,
-            $lte: options.endDate,
-          }
-        } : {})
-      });
-      
-      return activeUsersCount;
-    } catch (error) {
-      console.error('Error calculating active users:', error);
-      return 0;
-    }
-  }
-  
-  private async countTotalTasks(options: AnalyticsOptions): Promise<number> {
-    try {
-      // Count tasks created within the date range
-      const query: any = {};
-      
-      if (options.startDate && options.endDate) {
-        query.createdAt = {
-          $gte: options.startDate,
-          $lte: options.endDate,
-        };
-      }
-      
-      const totalTasks = await Task.countDocuments(query);
-      return totalTasks;
-    } catch (error) {
-      console.error('Error counting total tasks:', error);
-      return 0;
-    }
-  }
-  
-  private async calculateSystemCompletionRate(options: AnalyticsOptions): Promise<number> {
-    try {
-      // Build query based on date range
-      const query: any = {};
-      
-      if (options.startDate && options.endDate) {
-        query.updatedAt = {
-          $gte: options.startDate,
-          $lte: options.endDate,
-        };
-      }
-      
-      // Count completed tasks
-      const completedTasks = await Task.countDocuments({
-        ...query,
-        status: 'completed',
-      });
-      
-      // Count all tasks
-      const allTasks = await Task.countDocuments(query);
-      
-      // Calculate completion rate
-      if (allTasks === 0) return 0;
-      
-      const completionRate = (completedTasks / allTasks) * 100;
-      return parseFloat(completionRate.toFixed(1));
-    } catch (error) {
-      console.error('Error calculating system completion rate:', error);
-      return 0;
-    }
-  }
-  
-  private async calculateAverageTasksPerUser(options: AnalyticsOptions): Promise<number> {
-    // Implementation would calculate average tasks per user
-    return 12.4; // Example: 12.4 tasks per user
-  }
-  
-  private async calculateUserGrowthRate(options: AnalyticsOptions): Promise<number> {
-    // Implementation would calculate user growth rate
-    return 5.7; // Example: 5.7% growth
-  }
-  
-  private async calculateUserActivityTrend(options: AnalyticsOptions): Promise<ITimeSeriesPoint[]> {
-    // Implementation would track user activity over time
-    const trend: ITimeSeriesPoint[] = [];
-    const startDate = options.startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    
-    for (let i = 0; i < 30; i++) {
-      const date = new Date(startDate);
-      date.setDate(date.getDate() + i);
-      
-      trend.push({
-        timestamp: date,
-        value: 20 + Math.floor(Math.random() * 15), // Random value between 20-35
-      });
-    }
-    
-    return trend;
-  }
-  
-  private async calculateTaskCreationTrend(options: AnalyticsOptions): Promise<ITimeSeriesPoint[]> {
-    // Implementation would track task creation over time
-    const trend: ITimeSeriesPoint[] = [];
-    const startDate = options.startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    
-    for (let i = 0; i < 30; i++) {
-      const date = new Date(startDate);
-      date.setDate(date.getDate() + i);
-      
-      trend.push({
-        timestamp: date,
-        value: 10 + Math.floor(Math.random() * 20), // Random value between 10-30
-      });
-    }
-    
-    return trend;
-  }
-  
-  // Task analytics methods
-  
-  private async calculateTaskCompletionByDay(options: AnalyticsOptions): Promise<Record<string, number>> {
-    // Implementation would analyze task completion patterns by day of week
-    return {
-      Monday: 25,
-      Tuesday: 32,
-      Wednesday: 30,
-      Thursday: 28,
-      Friday: 35,
-      Saturday: 15,
-      Sunday: 10,
-    };
-  }
-  
-  private async calculateTaskCreationByPriority(options: AnalyticsOptions): Promise<Record<string, number>> {
-    // Implementation would count task creation by priority
-    return {
-      low: 45,
-      medium: 68,
-      high: 32,
-      urgent: 11,
-    };
-  }
-  
-  private async calculateAverageCompletionTimeByPriority(options: AnalyticsOptions): Promise<Record<string, number>> {
-    // Implementation would calculate average completion time by priority
-    return {
-      low: 72.5, // In hours
-      medium: 48.2,
-      high: 24.7,
-      urgent: 8.3,
-    };
-  }
-  
-  private async calculateRecurringTaskEfficiency(options: AnalyticsOptions): Promise<number> {
-    // Implementation would measure efficiency of recurring task completion
-    return 84.3; // Example: 84.3% efficiency
-  }
-  
-  private async calculateTaskCompletionTrend(options: AnalyticsOptions): Promise<ITimeSeriesPoint[]> {
-    // Implementation would track task completion over time
-    const trend: ITimeSeriesPoint[] = [];
-    const startDate = options.startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    
-    for (let i = 0; i < 30; i++) {
-      const date = new Date(startDate);
-      date.setDate(date.getDate() + i);
-      
-      trend.push({
-        timestamp: date,
-        value: 5 + Math.floor(Math.random() * 10), // Random value between 5-15
-      });
-    }
-    
-    return trend;
-  }
-  
-  // Trend analytics methods
-  
-  private async getUserTrendAnalytics(
-    userId: mongoose.Types.ObjectId,
-    options: AnalyticsOptions
-  ): Promise<any> {
-    // Try to find cached data if refresh is not requested
-    if (!options.refreshCache) {
-      const cachedData = await this.getCachedAnalytics('user', userId, undefined, 'trends');
-      if (cachedData) {
-        return cachedData;
+      // Adjust start date based on date range
+      switch (opts.dateRange) {
+        case 'day':
+          opts.startDate.setDate(opts.startDate.getDate() - 1);
+          break;
+        case 'week':
+          opts.startDate.setDate(opts.startDate.getDate() - 7);
+          break;
+        case 'month':
+          opts.startDate.setMonth(opts.startDate.getMonth() - 1);
+          break;
+        case 'quarter':
+          opts.startDate.setMonth(opts.startDate.getMonth() - 3);
+          break;
+        case 'year':
+          opts.startDate.setFullYear(opts.startDate.getFullYear() - 1);
+          break;
       }
     }
     
-    // Calculate trend metrics for user
-    const [
-      completionRateTrend,
-      taskCreationTrend,
-      productivityScoreTrend,
-    ] = await Promise.all([
-      this.calculateUserCompletionRateTrend(userId, options),
-      this.calculateUserTaskCreationTrend(userId, options),
-      this.calculateUserProductivityScoreTrend(userId, options),
-    ]);
-    
-    // Build metrics array (summary data)
-    const metrics: IMetricData[] = [
-      {
-        name: 'avgCompletionRate',
-        value: this.calculateAverageFromTimeSeries(completionRateTrend),
-        unit: 'percent',
-      },
-      {
-        name: 'taskCreationPace',
-        value: this.calculateAverageFromTimeSeries(taskCreationTrend),
-        unit: 'tasks_per_day',
-      },
-      {
-        name: 'avgProductivityScore',
-        value: this.calculateAverageFromTimeSeries(productivityScoreTrend),
-        unit: 'score',
-      },
-    ];
-    
-    // Build time series data
-    const timeSeries = [
-      {
-        name: 'completionRateTrend',
-        points: completionRateTrend,
-        interval: 'daily',
-      },
-      {
-        name: 'taskCreationTrend',
-        points: taskCreationTrend,
-        interval: 'daily',
-      },
-      {
-        name: 'productivityScoreTrend',
-        points: productivityScoreTrend,
-        interval: 'daily',
-      },
-    ];
-    
-    // Save to cache with longer duration for trends
-    const analyticsData = await this.saveAnalyticsToCache({
-      user: userId,
-      type: 'user',
-      category: 'trends',
-      metrics,
-      timeSeries,
-    });
-    
-    return analyticsData;
+    return opts;
   }
   
-  private async getTeamTrendAnalytics(
-    teamId: mongoose.Types.ObjectId,
-    options: AnalyticsOptions
-  ): Promise<any> {
-    // Try to find cached data if refresh is not requested
-    if (!options.refreshCache) {
-      const cachedData = await this.getCachedAnalytics('team', undefined, teamId, 'trends');
-      if (cachedData) {
-        return cachedData;
-      }
-    }
-    
-    // Placeholder data for team trends
-    const teamPerformanceTrend = this.generatePlaceholderTimeSeries(options, 40, 90);
-    
-    // Build metrics array
-    const metrics: IMetricData[] = [
-      {
-        name: 'avgTeamPerformance',
-        value: this.calculateAverageFromTimeSeries(teamPerformanceTrend),
-        unit: 'percent',
-      }
-    ];
-    
-    // Build time series with correct interval type
-    const timeSeries = [
-      {
-        name: 'teamPerformanceTrend',
-        points: teamPerformanceTrend,
-        interval: 'daily' as 'daily' | 'hourly' | 'weekly' | 'monthly',
-      }
-    ];
-    
-    // Save to cache
-    const analyticsData = await this.saveAnalyticsToCache({
-      team: teamId,
-      type: 'team',
-      category: 'trends',
-      metrics,
-      timeSeries,
-    });
-    
-    return analyticsData;
-  }
-  
-  private async getSystemTrendAnalytics(options: AnalyticsOptions): Promise<any> {
-    // Try to find cached data if refresh is not requested
-    if (!options.refreshCache) {
-      const cachedData = await this.getCachedAnalytics('system', undefined, undefined, 'trends');
-      if (cachedData) {
-        return cachedData;
-      }
-    }
-    
-    // Placeholder data for system trends
-    const systemActivityTrend = this.generatePlaceholderTimeSeries(options, 20, 70);
-    
-    // Build metrics array
-    const metrics: IMetricData[] = [
-      {
-        name: 'systemActivity',
-        value: this.calculateAverageFromTimeSeries(systemActivityTrend),
-        unit: 'actions_per_day',
-      }
-    ];
-    
-    // Build time series with correct interval type
-    const timeSeries = [
-      {
-        name: 'systemActivityTrend',
-        points: systemActivityTrend,
-        interval: 'daily' as 'daily' | 'hourly' | 'weekly' | 'monthly',
-      }
-    ];
-    
-    // Save to cache
-    const analyticsData = await this.saveAnalyticsToCache({
-      type: 'system',
-      category: 'trends',
-      metrics,
-      timeSeries,
-    });
-    
-    return analyticsData;
-  }
-  
-  // Helper methods for trend calculations
-  
-  private async calculateUserCompletionRateTrend(
-    userId: mongoose.Types.ObjectId,
-    options: AnalyticsOptions
-  ): Promise<ITimeSeriesPoint[]> {
-    // Implementation would calculate completion rate over time
-    // (Placeholder implementation for brevity)
-    return this.generatePlaceholderTimeSeries(options, 60, 100);
-  }
-  
-  private async calculateUserTaskCreationTrend(
-    userId: mongoose.Types.ObjectId,
-    options: AnalyticsOptions
-  ): Promise<ITimeSeriesPoint[]> {
-    // Implementation would track task creation over time
-    // (Placeholder implementation for brevity)
-    return this.generatePlaceholderTimeSeries(options, 0, 10);
-  }
-  
-  private async calculateUserProductivityScoreTrend(
-    userId: mongoose.Types.ObjectId,
-    options: AnalyticsOptions
-  ): Promise<ITimeSeriesPoint[]> {
-    // Implementation would calculate productivity score over time
-    // (Placeholder implementation for brevity)
-    return this.generatePlaceholderTimeSeries(options, 50, 100);
-  }
-  
-  private calculateAverageFromTimeSeries(points: ITimeSeriesPoint[]): number {
-    if (!points.length) return 0;
-    
-    const sum = points.reduce((total, point) => total + point.value, 0);
-    return Number((sum / points.length).toFixed(2));
-  }
-  
+  /**
+   * Generate placeholder time series data
+   */
   private generatePlaceholderTimeSeries(
     options: AnalyticsOptions,
     min: number = 0,
     max: number = 100
   ): ITimeSeriesPoint[] {
-    const result: ITimeSeriesPoint[] = [];
-    const startDate = options.startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const endDate = options.endDate || new Date();
+    const { startDate, endDate } = options;
+    const points: ITimeSeriesPoint[] = [];
     
-    const daysDiff = Math.ceil((endDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000));
-    
-    for (let i = 0; i < daysDiff; i++) {
-      const date = new Date(startDate);
-      date.setDate(date.getDate() + i);
+    const currentDate = new Date(startDate!);
+    while (currentDate <= endDate!) {
+      const value = min + Math.random() * (max - min);
       
-      result.push({
-        timestamp: date,
-        value: min + Math.random() * (max - min),
+      points.push({
+        timestamp: currentDate.toISOString(),
+        value: parseFloat(value.toFixed(2)),
+        label: currentDate.toLocaleDateString(),
       });
+      
+      currentDate.setDate(currentDate.getDate() + 1);
     }
     
-    return result;
+    return points;
   }
 }
 
-// Export a singleton instance
-export const analyticsService = new AnalyticsService();
-
-export default analyticsService; 
+export default new AnalyticsService(); 

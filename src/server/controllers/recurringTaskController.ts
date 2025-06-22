@@ -843,67 +843,95 @@ export const removeSkipDate = async (req: Request, res: Response, next: NextFunc
 };
 
 /**
- * Helper function to generate tasks for a recurring pattern
- * @param recurringTask - The recurring task pattern
- * @param count - Number of tasks to generate (default 1)
- * @returns Array of generated tasks
+ * Generate tasks from a recurring task pattern
+ * @param recurringTask The recurring task to generate from
+ * @param count Number of occurrences to generate (default: 1)
+ * @returns Array of created tasks
  */
 export async function generateTasksForRecurringPattern(
   recurringTask: IRecurringTask,
   count: number = 1
 ): Promise<any[]> {
-  // If recurring task is paused, don't generate tasks
-  if (recurringTask.paused) {
+  try {
+    // Keep track of created tasks
+    const createdTasks = [];
+    
+    // Generate specified number of tasks
+    for (let i = 0; i < count; i++) {
+      // Skip if we've reached max occurrences
+      if (recurringTask.max_occurrences && 
+          recurringTask.tasks_generated >= recurringTask.max_occurrences) {
+        console.log(`Skipping task generation - reached maximum occurrences (${recurringTask.max_occurrences})`);
+        break;
+      }
+      
+      // Calculate the occurrence date for this task
+      let occurrenceDate = new Date();
+      
+      if (i === 0 && recurringTask.next_generation_date) {
+        // Use the next generation date for the first task
+        occurrenceDate = new Date(recurringTask.next_generation_date);
+      } else {
+        // Calculate occurrence date based on pattern
+        occurrenceDate = RecurringTask.calculateNextOccurrence(recurringTask, occurrenceDate);
+      }
+      
+      // Check if occurrence date is past the end date
+      if (recurringTask.end_date && new Date(recurringTask.end_date) < occurrenceDate) {
+        console.log(`Skipping task generation - occurrence date ${occurrenceDate.toISOString()} is past end date ${recurringTask.end_date}`);
+        break;
+      }
+      
+      // Generate task data for this occurrence
+      const taskData = RecurringTask.generateTaskData(recurringTask, occurrenceDate);
+      
+      // Create the task
+      const task = await Task.create(taskData);
+      
+      if (task) {
+        createdTasks.push(task);
+        
+        // Update task count on the recurring task
+        await RecurringTask.update(recurringTask.id, {
+          tasks_generated: (recurringTask.tasks_generated || 0) + 1
+        });
+        
+        // Update recurring task object to reflect this change
+        recurringTask.tasks_generated = (recurringTask.tasks_generated || 0) + 1;
+        
+        // Send notification if needed
+        if (taskData.assigned_to && taskData.assigned_to !== recurringTask.created_by) {
+          try {
+            // Import dynamically to avoid circular dependencies
+            const { notifyRecurringTaskGenerated } = await import('../services/notificationService');
+            await notifyRecurringTaskGenerated(
+              taskData.assigned_to as string,
+              recurringTask.id,
+              task.id,
+              recurringTask.title,
+              task.title
+            );
+          } catch (notifyError) {
+            console.error('Error sending notification:', notifyError);
+          }
+        }
+      }
+      
+      // Update next generation date
+      const nextDate = RecurringTask.calculateNextOccurrence(recurringTask, occurrenceDate);
+      await RecurringTask.update(recurringTask.id, {
+        next_generation_date: nextDate.toISOString()
+      });
+      
+      // Update object to reflect the change
+      recurringTask.next_generation_date = nextDate.toISOString();
+    }
+    
+    return createdTasks;
+  } catch (error) {
+    console.error('Error generating tasks from recurring pattern:', error);
     return [];
   }
-
-  const generatedTasks = [];
-  let currentDate = recurringTask.nextGenerationDate || 
-                    recurringTask.calculateNextOccurrence();
-
-  // Generate up to 'count' tasks
-  for (let i = 0; i < count; i++) {
-    // Check if we should generate a task for this date
-    if (!recurringTask.shouldGenerateTask(currentDate)) {
-      // Move to next potential date
-      currentDate = recurringTask.calculateNextOccurrence(currentDate);
-      continue;
-    }
-
-    // Generate the task data
-    const taskData = recurringTask.generateTaskData(currentDate);
-
-    // Create the complete task data object with recurring task reference
-    const completeTaskData = {
-      ...taskData,
-      recurringTaskId: recurringTask._id
-    };
-
-    // Create and save the task with proper typing
-    const newTask = new Task(completeTaskData);
-    const savedTask = await newTask.save();
-    
-    // Populate task data if needed
-    if (taskData.assignedTo) {
-      await savedTask.populate('assignedTo', 'name email avatar');
-    }
-    
-    // Update recurring task metadata
-    recurringTask.tasksGenerated += 1;
-    recurringTask.lastGeneratedDate = currentDate;
-    
-    // Calculate the next occurrence date
-    currentDate = recurringTask.calculateNextOccurrence(currentDate);
-    
-    // Add to results array
-    generatedTasks.push(savedTask);
-  }
-
-  // Update the next generation date
-  recurringTask.nextGenerationDate = currentDate;
-  await recurringTask.save();
-
-  return generatedTasks;
 }
 
 /**

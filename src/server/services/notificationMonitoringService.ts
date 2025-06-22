@@ -1,4 +1,3 @@
-import mongoose from 'mongoose';
 import { Task } from '../models';
 import notificationService from './notificationService';
 
@@ -77,45 +76,48 @@ export const monitorTaskDueDates = async (): Promise<void> => {
  */
 async function checkTasksDueSoon(now: Date, targetTime: Date): Promise<void> {
   try {
-    // The time window we're checking (between now and targetTime)
-    const dueSoonTasks = await Task.find({
-      status: { $ne: 'completed' },
-      dueDate: {
-        $gt: now,
-        $lte: targetTime
-      },
-      // Only find tasks where we haven't sent a notification in the past day
-      $or: [
-        { 'notificationsSent.dueSoon': { $exists: false } },
-        { 'notificationsSent.dueSoon': { $lt: new Date(now.getTime() - ONE_DAY_MS) } }
-      ]
-    }).populate('assignedTo', '_id name email');
+    const nowStr = now.toISOString();
+    const targetTimeStr = targetTime.toISOString();
+    const oneDayAgoStr = new Date(now.getTime() - ONE_DAY_MS).toISOString();
+    
+    // Find tasks due soon
+    const { data: dueSoonTasks, error } = await Task.findDueSoon(nowStr, targetTimeStr, oneDayAgoStr);
+    
+    if (error) {
+      console.error('Error querying due soon tasks:', error);
+      return;
+    }
 
-    console.log(`Found ${dueSoonTasks.length} tasks due soon`);
+    console.log(`Found ${dueSoonTasks?.length || 0} tasks due soon`);
 
-    for (const task of dueSoonTasks) {
+    for (const task of dueSoonTasks || []) {
       try {
         // Skip if there's no assigned user
-        if (!task.assignedTo) continue;
+        if (!task.assigned_to) continue;
         
-        const assignedUser = task.assignedTo as any; // Using any due to population complexity
+        // Get user details (needed for notifications)
+        const { data: assignedUser } = await Task.getUserDetails(task.assigned_to);
+        if (!assignedUser) continue;
         
         // Send notification
         await notificationService.notifyTaskDue(
-          assignedUser._id,
-          task._id,
+          task.assigned_to,
+          task.id,
           task.title,
-          task.dueDate
+          task.due_date
         );
         
         // Update task to record notification sent
-        task.notificationsSent = task.notificationsSent || {};
-        task.notificationsSent.dueSoon = new Date();
-        await task.save();
+        const notificationsSent = task.notifications_sent || {};
+        notificationsSent.due_soon = new Date().toISOString();
         
-        console.log(`Sent due soon notification for task ${task._id} to user ${assignedUser._id}`);
+        await Task.update(task.id, {
+          notifications_sent: notificationsSent
+        });
+        
+        console.log(`Sent due soon notification for task ${task.id} to user ${task.assigned_to}`);
       } catch (taskError) {
-        console.error(`Error sending notification for task ${task._id}:`, taskError);
+        console.error(`Error sending notification for task ${task.id}:`, taskError);
       }
     }
   } catch (error) {
@@ -128,48 +130,53 @@ async function checkTasksDueSoon(now: Date, targetTime: Date): Promise<void> {
  */
 async function checkOverdueTasks(now: Date): Promise<void> {
   try {
-    // Find tasks that are overdue
-    const overdueTasks = await Task.find({
-      status: { $ne: 'completed' },
-      dueDate: { $lt: now },
-      // Only find tasks where we haven't sent an overdue notification in the past day
-      $or: [
-        { 'notificationsSent.overdue': { $exists: false } },
-        { 'notificationsSent.overdue': { $lt: new Date(now.getTime() - ONE_DAY_MS) } }
-      ]
-    }).populate('assignedTo', '_id name email');
+    const nowStr = now.toISOString();
+    const oneDayAgoStr = new Date(now.getTime() - ONE_DAY_MS).toISOString();
+    
+    // Find overdue tasks
+    const { data: overdueTasks, error } = await Task.findOverdue(nowStr, oneDayAgoStr);
+    
+    if (error) {
+      console.error('Error querying overdue tasks:', error);
+      return;
+    }
 
-    console.log(`Found ${overdueTasks.length} overdue tasks`);
+    console.log(`Found ${overdueTasks?.length || 0} overdue tasks`);
 
-    for (const task of overdueTasks) {
+    for (const task of overdueTasks || []) {
       try {
         // Skip if there's no assigned user
-        if (!task.assignedTo) continue;
+        if (!task.assigned_to) continue;
         
-        const assignedUser = task.assignedTo as any; // Using any due to population complexity
+        // Get user details (needed for notifications)
+        const { data: assignedUser } = await Task.getUserDetails(task.assigned_to);
+        if (!assignedUser) continue;
         
         // Calculate how overdue the task is
-        const overdueDuration = now.getTime() - task.dueDate.getTime();
+        const taskDueDate = new Date(task.due_date);
+        const overdueDuration = now.getTime() - taskDueDate.getTime();
         
         // For very overdue tasks (>1 day), use a higher priority notification
         if (overdueDuration > ONE_DAY_MS) {
-          // Send notification
           await notificationService.notifyTaskOverdue(
-            assignedUser._id,
-            task._id,
+            task.assigned_to,
+            task.id,
             task.title,
-            task.dueDate
+            task.due_date
           );
         }
         
         // Update task to record notification sent
-        task.notificationsSent = task.notificationsSent || {};
-        task.notificationsSent.overdue = new Date();
-        await task.save();
+        const notificationsSent = task.notifications_sent || {};
+        notificationsSent.overdue = new Date().toISOString();
         
-        console.log(`Sent overdue notification for task ${task._id} to user ${assignedUser._id}`);
+        await Task.update(task.id, {
+          notifications_sent: notificationsSent
+        });
+        
+        console.log(`Sent overdue notification for task ${task.id} to user ${task.assigned_to}`);
       } catch (taskError) {
-        console.error(`Error sending overdue notification for task ${task._id}:`, taskError);
+        console.error(`Error sending overdue notification for task ${task.id}:`, taskError);
       }
     }
   } catch (error) {

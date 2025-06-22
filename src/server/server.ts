@@ -1,4 +1,3 @@
-
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -35,7 +34,7 @@ app.get('/health', (req, res) => {
 });
 
 // Redirect all API requests to Supabase Edge Functions
-app.use('/api/*', (req, res) => {
+app.use('/api', (req, res) => {
   res.status(200).json({
     message: 'API requests are now handled by Supabase Edge Functions',
     supabaseUrl: config.supabaseUrl,
@@ -47,7 +46,7 @@ app.use('/api/*', (req, res) => {
 app.use(errorHandler);
 
 // 404 handler
-app.use('*', (req, res) => {
+app.use((req, res) => {
   res.status(404).json({
     success: false,
     message: `Route ${req.originalUrl} not found - API is now handled by Supabase`,

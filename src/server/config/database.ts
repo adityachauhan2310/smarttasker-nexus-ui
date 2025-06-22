@@ -1,44 +1,34 @@
-
-import mongoose from 'mongoose';
+import { createClient } from '@supabase/supabase-js';
 import config from './config';
+
+// Create Supabase client
+export const supabase = createClient(
+  config.supabaseUrl,
+  config.supabaseAnonKey
+);
+
+// For admin/service role operations that require higher privileges
+export const supabaseAdmin = createClient(
+  config.supabaseUrl,
+  config.supabaseServiceKey || config.supabaseAnonKey
+);
 
 const connectDB = async (): Promise<void> => {
   try {
-    console.log('Attempting to connect to MongoDB...');
-    console.log('MongoDB URI:', config.mongoURI);
+    console.log('Using Supabase as database provider');
+    console.log('Supabase URL:', config.supabaseUrl);
     
-    const conn = await mongoose.connect(config.mongoURI, {
-      // Modern connection options
-      maxPoolSize: 10,
-      serverSelectionTimeoutMS: 5000,
-      socketTimeoutMS: 45000,
-    });
-
-    console.log(`MongoDB Connected: ${conn.connection.host}`);
+    // Test connection by making a simple query
+    const { data, error } = await supabase.from('profiles').select('id').limit(1);
     
-    // Add connection event listeners
-    mongoose.connection.on('error', (err) => {
-      console.error('MongoDB connection error:', err);
-    });
-
-    mongoose.connection.on('disconnected', () => {
-      console.log('MongoDB disconnected');
-    });
-
-    // Graceful shutdown
-    process.on('SIGINT', async () => {
-      try {
-        await mongoose.connection.close();
-        console.log('MongoDB connection closed through app termination');
-        process.exit(0);
-      } catch (err) {
-        console.error('Error during graceful shutdown:', err);
-        process.exit(1);
-      }
-    });
-
+    if (error) {
+      throw error;
+    }
+    
+    console.log('Supabase connection successful');
+    
   } catch (error: any) {
-    console.error('Error connecting to MongoDB:', error.message);
+    console.error('Error connecting to Supabase:', error.message);
     console.error('Full error:', error);
     process.exit(1);
   }

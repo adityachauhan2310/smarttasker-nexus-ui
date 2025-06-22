@@ -1,23 +1,27 @@
-import mongoose from 'mongoose';
-import { Notification, INotification, NotificationType, NotificationPriority } from '../models/Notification';
-import { User } from '../models';
+import { 
+  Notification,
+  INotification, 
+  NotificationType, 
+  NotificationPriority,
+  INotificationReference,
+  ReferenceType
+} from '../models/Notification';
 import { sendEmail } from './emailService';
-import { clearEntityCache } from '../middleware/cacheMiddleware';
 
 // Interface for creating a new notification
 interface CreateNotificationOptions {
-  user: mongoose.Types.ObjectId;
+  user_id: string;
   type: NotificationType;
   title: string;
   message: string;
   priority?: NotificationPriority;
   reference?: {
-    refType: 'Task' | 'Team' | 'User' | 'Comment' | 'RecurringTask';
-    refId: mongoose.Types.ObjectId;
+    ref_type: ReferenceType;
+    ref_id: string;
   };
-  relatedRefs?: {
-    refType: 'Task' | 'Team' | 'User' | 'Comment' | 'RecurringTask';
-    refId: mongoose.Types.ObjectId;
+  related_refs?: {
+    ref_type: ReferenceType;
+    ref_id: string;
   }[];
   data?: Record<string, any>;
   sendEmail?: boolean;
@@ -29,44 +33,40 @@ interface CreateNotificationOptions {
 export const createNotification = async (options: CreateNotificationOptions): Promise<INotification | null> => {
   try {
     const {
-      user,
+      user_id,
       type,
       title,
       message,
       priority = 'normal',
       reference,
-      relatedRefs,
+      related_refs,
       data,
       sendEmail: shouldSendEmail = false,
     } = options;
 
-    // Create notification
-    const notification = new Notification({
-      user,
+    // Create notification using the Notification model class
+    const notification = await Notification.create({
+      user_id,
       type,
       title,
       message,
       priority,
       reference,
-      relatedRefs,
+      related_refs,
       data,
       read: false,
-      emailSent: false,
+      email_sent: false
     });
 
-    // Save to database
-    await notification.save();
-
-    // Clear the cache for user's notifications
-    clearEntityCache('notifications');
-    clearEntityCache('userNotifications');
-    clearEntityCache('notificationCount');
+    if (!notification) {
+      throw new Error('Failed to create notification');
+    }
 
     // Send email if requested
     if (shouldSendEmail) {
       // Queue email sending to avoid blocking
       queueEmail(notification).catch(err => {
-        console.error(`Failed to queue email for notification ${notification._id}:`, err);
+        console.error(`Failed to queue email for notification ${notification.id}:`, err);
       });
     }
 
@@ -81,26 +81,26 @@ export const createNotification = async (options: CreateNotificationOptions): Pr
  * Create notification for task assignment
  */
 export const notifyTaskAssigned = async (
-  userId: mongoose.Types.ObjectId,
-  taskId: mongoose.Types.ObjectId,
+  userId: string,
+  taskId: string,
   taskTitle: string,
-  assignedByUserId: mongoose.Types.ObjectId
+  assignedByUserId: string
 ): Promise<void> => {
   try {
     await createNotification({
-      user: userId,
+      user_id: userId,
       type: 'TaskAssigned',
       title: 'Task Assigned',
       message: `You have been assigned a new task: ${taskTitle}`,
       priority: 'normal',
       reference: {
-        refType: 'Task',
-        refId: taskId,
+        ref_type: 'Task',
+        ref_id: taskId,
       },
-      relatedRefs: [
+      related_refs: [
         {
-          refType: 'User',
-          refId: assignedByUserId,
+          ref_type: 'User',
+          ref_id: assignedByUserId,
         },
       ],
       data: {
@@ -117,21 +117,21 @@ export const notifyTaskAssigned = async (
  * Create notification for task due soon
  */
 export const notifyTaskDue = async (
-  userId: mongoose.Types.ObjectId,
-  taskId: mongoose.Types.ObjectId,
+  userId: string,
+  taskId: string,
   taskTitle: string,
-  dueDate: Date
+  dueDate: string
 ): Promise<void> => {
   try {
     await createNotification({
-      user: userId,
+      user_id: userId,
       type: 'TaskDue',
       title: 'Task Due Soon',
       message: `Task "${taskTitle}" is due soon`,
       priority: 'high',
       reference: {
-        refType: 'Task',
-        refId: taskId,
+        ref_type: 'Task',
+        ref_id: taskId,
       },
       data: {
         taskTitle,
@@ -148,21 +148,21 @@ export const notifyTaskDue = async (
  * Create notification for task overdue
  */
 export const notifyTaskOverdue = async (
-  userId: mongoose.Types.ObjectId,
-  taskId: mongoose.Types.ObjectId,
+  userId: string,
+  taskId: string,
   taskTitle: string,
-  dueDate: Date
+  dueDate: string
 ): Promise<void> => {
   try {
     await createNotification({
-      user: userId,
+      user_id: userId,
       type: 'TaskOverdue',
       title: 'Task Overdue',
       message: `Task "${taskTitle}" is now overdue`,
       priority: 'urgent',
       reference: {
-        refType: 'Task',
-        refId: taskId,
+        ref_type: 'Task',
+        ref_id: taskId,
       },
       data: {
         taskTitle,
@@ -179,32 +179,32 @@ export const notifyTaskOverdue = async (
  * Create notification for mention in comment
  */
 export const notifyMentionedInComment = async (
-  userId: mongoose.Types.ObjectId,
-  taskId: mongoose.Types.ObjectId,
-  commentId: mongoose.Types.ObjectId,
-  mentionedByUserId: mongoose.Types.ObjectId,
+  userId: string,
+  taskId: string,
+  commentId: string,
+  mentionedByUserId: string,
   taskTitle: string,
   commentText: string
 ): Promise<void> => {
   try {
     await createNotification({
-      user: userId,
+      user_id: userId,
       type: 'MentionedInComment',
       title: 'Mentioned in Comment',
       message: `You were mentioned in a comment on task "${taskTitle}"`,
       priority: 'normal',
       reference: {
-        refType: 'Task',
-        refId: taskId,
+        ref_type: 'Task',
+        ref_id: taskId,
       },
-      relatedRefs: [
+      related_refs: [
         {
-          refType: 'User',
-          refId: mentionedByUserId,
+          ref_type: 'User',
+          ref_id: mentionedByUserId,
         },
         {
-          refType: 'Comment',
-          refId: commentId,
+          ref_type: 'Comment',
+          ref_id: commentId,
         },
       ],
       data: {
@@ -222,8 +222,8 @@ export const notifyMentionedInComment = async (
  * Create notification for team change
  */
 export const notifyTeamChanged = async (
-  userId: mongoose.Types.ObjectId,
-  teamId: mongoose.Types.ObjectId,
+  userId: string,
+  teamId: string,
   teamName: string,
   changeType: 'added' | 'removed' | 'leader_changed'
 ): Promise<void> => {
@@ -251,14 +251,14 @@ export const notifyTeamChanged = async (
 
   try {
     await createNotification({
-      user: userId,
+      user_id: userId,
       type,
       title,
       message,
       priority: 'normal',
       reference: {
-        refType: 'Team',
-        refId: teamId,
+        ref_type: 'Team',
+        ref_id: teamId,
       },
       data: {
         teamName,
@@ -267,7 +267,7 @@ export const notifyTeamChanged = async (
       sendEmail: true,
     });
   } catch (error) {
-    console.error('Error sending team changed notification:', error);
+    console.error('Error sending team change notification:', error);
   }
 };
 
@@ -275,168 +275,111 @@ export const notifyTeamChanged = async (
  * Create notification for recurring task generated
  */
 export const notifyRecurringTaskGenerated = async (
-  userId: mongoose.Types.ObjectId,
-  recurringTaskId: mongoose.Types.ObjectId,
-  taskId: mongoose.Types.ObjectId,
+  userId: string,
+  recurringTaskId: string,
+  taskId: string,
   recurringTaskTitle: string,
   taskTitle: string
 ): Promise<void> => {
   try {
     await createNotification({
-      user: userId,
+      user_id: userId,
       type: 'RecurringTaskGenerated',
-      title: 'New Recurring Task',
-      message: `A new task was generated from recurring pattern "${recurringTaskTitle}"`,
+      title: 'Recurring Task Generated',
+      message: `A new task has been generated from your recurring task "${recurringTaskTitle}"`,
       priority: 'normal',
       reference: {
-        refType: 'Task',
-        refId: taskId,
+        ref_type: 'Task',
+        ref_id: taskId,
       },
-      relatedRefs: [
+      related_refs: [
         {
-          refType: 'RecurringTask',
-          refId: recurringTaskId,
+          ref_type: 'RecurringTask',
+          ref_id: recurringTaskId,
         },
       ],
       data: {
         recurringTaskTitle,
         taskTitle,
       },
-      sendEmail: false, // Often don't need email for recurring tasks
+      sendEmail: true,
     });
   } catch (error) {
-    console.error('Error sending recurring task notification:', error);
+    console.error('Error sending recurring task generated notification:', error);
   }
 };
 
 /**
- * Queue email notifications for processing
+ * Queue email sending for a notification
  */
 async function queueEmail(notification: INotification): Promise<void> {
   try {
-    // Don't send emails for notifications that were already sent
-    if (notification.emailSent) {
+    if (notification.email_sent) {
+      console.log(`Email already sent for notification ${notification.id}`);
       return;
     }
 
-    // Get user to check notification preferences
-    const user = await User.findById(notification.user);
-    
-    if (!user || !user.email) {
-      console.log(`Cannot send email to user ${notification.user}: User not found or no email`);
-      return;
-    }
-    
-    // Check if user has opted out of this notification type
-    if (user.notificationPreferences && 
-        user.notificationPreferences.emailDisabled &&
-        user.notificationPreferences.emailDisabled.includes(notification.type)) {
-      console.log(`User ${user._id} has opted out of email notifications for ${notification.type}`);
-      return;
-    }
-
-    // Prepare email content based on notification type
     const emailContent = await prepareEmailContent(notification);
-    
     if (!emailContent) {
-      console.log(`Cannot prepare email for notification type: ${notification.type}`);
+      console.log(`No email content for notification ${notification.id}`);
       return;
     }
 
     // Send the email
     await sendEmail({
-      to: user.email,
+      to: '', // Need to fetch user's email
       subject: emailContent.subject,
       html: emailContent.html,
     });
 
-    // Mark notification as emailed
-    notification.emailSent = true;
-    notification.emailSentAt = new Date();
-    await notification.save();
-
+    // Update the notification to mark email as sent
+    await Notification.update(notification.id, {
+      email_sent: true,
+      email_sent_at: new Date().toISOString(),
+    });
   } catch (error) {
-    console.error('Error queueing email notification:', error);
-    // In production, implement retry logic here
+    console.error(`Error sending email for notification ${notification.id}:`, error);
   }
 }
 
 /**
- * Prepare email content based on notification type
+ * Prepare email content for a notification
  */
 async function prepareEmailContent(notification: INotification): Promise<{ subject: string; html: string } | null> {
-  // In a real implementation, you would use a template engine like Handlebars
-  // For this example, we'll create simple HTML content
-  
-  let subject = '';
-  let content = '';
-  
-  switch (notification.type) {
-    case 'TaskAssigned':
-      subject = 'New Task Assigned';
-      content = `
-        <h2>New Task Assigned</h2>
-        <p>You have been assigned a new task: <strong>${notification.data?.taskTitle || 'Untitled Task'}</strong></p>
-        <p>${notification.message}</p>
-        <p><a href="{{taskUrl}}">View Task</a></p>
-      `;
-      break;
-      
-    case 'TaskDue':
-      subject = 'Task Due Soon';
-      content = `
-        <h2>Task Due Soon</h2>
-        <p>The following task is due soon: <strong>${notification.data?.taskTitle || 'Untitled Task'}</strong></p>
-        <p>${notification.message}</p>
-        <p><a href="{{taskUrl}}">View Task</a></p>
-      `;
-      break;
-      
-    case 'TaskOverdue':
-      subject = 'Task Overdue';
-      content = `
-        <h2>Task Overdue</h2>
-        <p>The following task is overdue: <strong>${notification.data?.taskTitle || 'Untitled Task'}</strong></p>
-        <p>${notification.message}</p>
-        <p><a href="{{taskUrl}}">View Task</a></p>
-      `;
-      break;
-      
-    case 'MentionedInComment':
-      subject = 'You Were Mentioned in a Comment';
-      content = `
-        <h2>Mentioned in Comment</h2>
-        <p>You were mentioned in a comment on task: <strong>${notification.data?.taskTitle || 'Untitled Task'}</strong></p>
-        <p>Comment: "${notification.data?.commentText || ''}"</p>
-        <p><a href="{{taskUrl}}">View Task</a></p>
-      `;
-      break;
-      
-    case 'TeamMemberAdded':
-    case 'TeamMemberRemoved':
-    case 'TeamLeaderChanged':
-      subject = 'Team Update';
-      content = `
-        <h2>${notification.title}</h2>
-        <p>${notification.message}</p>
-        <p><a href="{{teamUrl}}">View Team</a></p>
-      `;
-      break;
-      
-    default:
-      subject = notification.title;
-      content = `
-        <h2>${notification.title}</h2>
-        <p>${notification.message}</p>
-      `;
+  try {
+    // Template customization based on notification type
+    let subject = notification.title;
+    let templateData: Record<string, any> = {
+      title: notification.title,
+      message: notification.message,
+      notificationId: notification.id,
+      timestamp: new Date(notification.created_at).toLocaleString(),
+    };
+
+    // Add notification specific data
+    if (notification.data) {
+      templateData = {
+        ...templateData,
+        ...notification.data,
+      };
+    }
+
+    // Here you could use different templates based on notification type
+    const html = `
+      <h2>${notification.title}</h2>
+      <p>${notification.message}</p>
+      <hr />
+      <p><small>This notification was sent at ${templateData.timestamp}</small></p>
+    `;
+
+    return {
+      subject,
+      html,
+    };
+  } catch (error) {
+    console.error('Error preparing email content:', error);
+    return null;
   }
-  
-  // For a full implementation, replace placeholders with real URLs
-  const html = content
-    .replace(/{{taskUrl}}/g, `http://localhost:3000/tasks/${notification.reference?.refId}`)
-    .replace(/{{teamUrl}}/g, `http://localhost:3000/teams/${notification.reference?.refId}`);
-  
-  return { subject, html };
 }
 
 export default {

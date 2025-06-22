@@ -1,9 +1,7 @@
 import { EventEmitter } from 'events';
-import mongoose from 'mongoose';
 import { ChatHistory, IChatHistory, IChatMessage } from '../models/ChatHistory';
+import { Task } from '../models/Task';
 import { groqAiClient, Message, TaskExtractionResult } from './groqAiService';
-import config from '../config/config';
-import { Task } from '../models';
 
 // Maximum messages to keep in conversation context
 const MAX_CONTEXT_MESSAGES = 20;
@@ -21,9 +19,9 @@ export class ChatService {
    * @returns Response or event emitter for streaming
    */
   public async sendMessage(
-    userId: mongoose.Types.ObjectId,
+    userId: string,
     message: string,
-    chatId?: mongoose.Types.ObjectId,
+    chatId?: string,
     stream: boolean = false
   ): Promise<string | EventEmitter> {
     try {
@@ -34,14 +32,14 @@ export class ChatService {
       const userMessage: IChatMessage = {
         role: 'user',
         content: message,
-        timestamp: new Date(),
+        timestamp: new Date().toISOString(),
       };
       
-      chatHistory.messages.push(userMessage);
-      chatHistory.lastActive = new Date();
+      // Get current messages and add new message
+      const messages = [...chatHistory.messages, userMessage];
       
       // Prepare messages for AI including system prompt
-      const contextMessages = this.prepareContextMessages(chatHistory.messages);
+      const contextMessages = this.prepareContextMessages(messages);
       
       let assistantResponse: string;
       
@@ -66,11 +64,14 @@ export class ChatService {
             const assistantMessage: IChatMessage = {
               role: 'assistant',
               content: fullResponse,
-              timestamp: new Date(),
+              timestamp: new Date().toISOString(),
             };
             
-            chatHistory.messages.push(assistantMessage);
-            await chatHistory.save();
+            // Update chat history with both messages
+            await ChatHistory.update(chatHistory.id, {
+              messages: [...messages, assistantMessage],
+              last_active: new Date().toISOString()
+            });
           }
         });
         
@@ -85,13 +86,14 @@ export class ChatService {
         const assistantMessage: IChatMessage = {
           role: 'assistant',
           content: assistantResponse,
-          timestamp: new Date(),
+          timestamp: new Date().toISOString(),
         };
         
-        chatHistory.messages.push(assistantMessage);
-        
-        // Save chat history
-        await chatHistory.save();
+        // Update chat history with both messages
+        await ChatHistory.update(chatHistory.id, {
+          messages: [...messages, assistantMessage],
+          last_active: new Date().toISOString()
+        });
         
         return assistantResponse;
       }
@@ -108,13 +110,10 @@ export class ChatService {
    * @returns Array of chat histories
    */
   public async getUserChatHistory(
-    userId: mongoose.Types.ObjectId,
+    userId: string,
     limit: number = 10
   ): Promise<IChatHistory[]> {
-    return ChatHistory.find({ user: userId })
-      .sort({ lastActive: -1 })
-      .limit(limit)
-      .lean();
+    return await ChatHistory.getByUser(userId, limit);
   }
   
   /**
@@ -124,10 +123,17 @@ export class ChatService {
    * @returns Chat history or null if not found
    */
   public async getChatHistory(
-    chatId: mongoose.Types.ObjectId,
-    userId: mongoose.Types.ObjectId
+    chatId: string,
+    userId: string
   ): Promise<IChatHistory | null> {
-    return ChatHistory.findOne({ _id: chatId, user: userId }).lean();
+    const chatHistory = await ChatHistory.findById(chatId);
+    
+    // Verify the chat belongs to the user
+    if (!chatHistory || chatHistory.user_id !== userId) {
+      return null;
+    }
+    
+    return chatHistory;
   }
   
   /**
@@ -135,16 +141,12 @@ export class ChatService {
    * @param userId User ID
    * @returns Newly created chat history
    */
-  public async createNewChat(userId: mongoose.Types.ObjectId): Promise<IChatHistory> {
-    const chatHistory = new ChatHistory({
-      user: userId,
+  public async createNewChat(userId: string): Promise<IChatHistory | null> {
+    return await ChatHistory.create({
+      user_id: userId,
       messages: [],
-      title: 'New Chat',
-      lastActive: new Date(),
+      title: 'New Chat'
     });
-    
-    await chatHistory.save();
-    return chatHistory;
   }
   
   /**
@@ -154,11 +156,16 @@ export class ChatService {
    * @returns Success status
    */
   public async deleteChatHistory(
-    chatId: mongoose.Types.ObjectId,
-    userId: mongoose.Types.ObjectId
+    chatId: string,
+    userId: string
   ): Promise<boolean> {
-    const result = await ChatHistory.deleteOne({ _id: chatId, user: userId });
-    return result.deletedCount === 1;
+    // First verify the chat belongs to the user
+    const chatHistory = await ChatHistory.findById(chatId);
+    if (!chatHistory || chatHistory.user_id !== userId) {
+      return false;
+    }
+    
+    return await ChatHistory.delete(chatId);
   }
   
   /**
@@ -166,9 +173,16 @@ export class ChatService {
    * @param userId User ID
    * @returns Number of deleted chat histories
    */
-  public async clearAllChatHistory(userId: mongoose.Types.ObjectId): Promise<number> {
-    const result = await ChatHistory.deleteMany({ user: userId });
-    return result.deletedCount || 0;
+  public async clearAllChatHistory(userId: string): Promise<number> {
+    const chatHistories = await ChatHistory.getByUser(userId, 1000);
+    
+    let deletedCount = 0;
+    for (const chat of chatHistories) {
+      const success = await ChatHistory.delete(chat.id);
+      if (success) deletedCount++;
+    }
+    
+    return deletedCount;
   }
   
   /**
@@ -178,7 +192,7 @@ export class ChatService {
    * @returns Task extraction result
    */
   public async extractTaskFromMessage(
-    userId: mongoose.Types.ObjectId,
+    userId: string,
     message: string
   ): Promise<TaskExtractionResult> {
     return groqAiClient.extractTaskFromText(message);
@@ -191,9 +205,9 @@ export class ChatService {
    * @returns Created task ID
    */
   public async createTaskFromExtraction(
-    userId: mongoose.Types.ObjectId,
+    userId: string,
     extractionResult: TaskExtractionResult
-  ): Promise<mongoose.Types.ObjectId | null> {
+  ): Promise<string | null> {
     if (!extractionResult.success || !extractionResult.task) {
       return null;
     }
@@ -201,19 +215,18 @@ export class ChatService {
     const { task } = extractionResult;
     
     try {
-      const newTask = new Task({
+      const newTask = await Task.create({
         title: task.title,
         description: task.description || '',
         priority: task.priority || 'medium',
         status: 'pending',
-        dueDate: task.dueDate || undefined,
-        createdBy: userId,
-        assignedTo: userId, // Assign to the creator by default
+        due_date: task.dueDate ? new Date(task.dueDate).toISOString() : undefined,
+        created_by: userId,
+        assigned_to: userId, // Assign to the creator by default
         tags: task.tags || [],
       });
       
-      await newTask.save();
-      return newTask._id;
+      return newTask?.id || null;
     } catch (error) {
       console.error('Error creating task from extraction:', error);
       return null;
@@ -225,7 +238,7 @@ export class ChatService {
    * @param chatId Chat history ID
    * @returns Success status and generated title
    */
-  public async generateChatTitle(chatId: mongoose.Types.ObjectId): Promise<{success: boolean, title?: string}> {
+  public async generateChatTitle(chatId: string): Promise<{success: boolean, title?: string}> {
     try {
       // Get chat history
       const chatHistory = await ChatHistory.findById(chatId);
@@ -249,80 +262,78 @@ export class ChatService {
       ];
       
       // Get title from AI
-      const response = await groqAiClient.chat(messages, {
-        temperature: 0.7,
-        max_tokens: 20
-      });
+      const response = await groqAiClient.chat(messages);
+      const title = response.choices[0].message.content.trim();
       
-      // Extract and clean title
-      let title = response.choices[0].message.content.trim();
+      // Update chat history with new title
+      await ChatHistory.update(chatId, { title });
       
-      // Remove quotes if present
-      if ((title.startsWith('"') && title.endsWith('"')) || 
-          (title.startsWith("'") && title.endsWith("'"))) {
-        title = title.substring(1, title.length - 1);
-      }
-      
-      // Limit length
-      if (title.length > 50) {
-        title = title.substring(0, 47) + '...';
-      }
-      
-      // Update chat title
-      chatHistory.title = title;
-      await chatHistory.save();
-      
-      return { success: true, title };
+      return {
+        success: true,
+        title
+      };
     } catch (error) {
       console.error('Error generating chat title:', error);
       return { success: false };
     }
   }
   
-  // Private helper methods
-  
   /**
-   * Get existing chat history or create a new one
+   * Get or create chat history
+   * @param userId User ID
+   * @param chatId Optional chat history ID
+   * @returns Chat history
    */
   private async getOrCreateChatHistory(
-    userId: mongoose.Types.ObjectId,
-    chatId?: mongoose.Types.ObjectId
+    userId: string,
+    chatId?: string
   ): Promise<IChatHistory> {
+    // If chat ID provided, get that specific chat
     if (chatId) {
-      // Try to find existing chat
-      const existingChat = await ChatHistory.findOne({
-        _id: chatId,
-        user: userId
-      });
+      const existingChat = await ChatHistory.findById(chatId);
       
-      if (existingChat) {
+      // Verify the chat belongs to the user
+      if (existingChat && existingChat.user_id === userId) {
         return existingChat;
       }
     }
     
-    // Create new chat history
-    return this.createNewChat(userId);
+    // Create a new chat
+    const newChat = await this.createNewChat(userId);
+    
+    if (!newChat) {
+      throw new Error('Failed to create chat history');
+    }
+    
+    return newChat;
   }
   
   /**
-   * Prepare messages for sending to Groq AI
+   * Prepare context messages for the AI
+   * @param messages Chat history messages
+   * @returns Messages formatted for the AI
    */
   private prepareContextMessages(messages: IChatMessage[]): Message[] {
-    // Add system message at the beginning
-    const systemMessage: Message = {
-      role: 'system',
-      content: config.groqAi.systemPrompt
-    };
+    // Add system instructions
+    const contextMessages: Message[] = [
+      {
+        role: 'system',
+        content: 'You are a helpful AI assistant. Provide accurate, helpful responses.',
+      },
+    ];
     
-    // Convert chat messages to Groq API format, limiting context window
-    const recentMessages = messages
-      .slice(-MAX_CONTEXT_MESSAGES) // Limit to prevent context overflow
-      .map(msg => ({
-        role: msg.role as 'system' | 'user' | 'assistant',
-        content: msg.content
-      }));
+    // Limit context to most recent messages (excluding system message)
+    const recentMessages = messages.slice(-MAX_CONTEXT_MESSAGES);
     
-    return [systemMessage, ...recentMessages];
+    // Add chat history, converting timestamps
+    recentMessages.forEach((msg) => {
+      contextMessages.push({
+        role: msg.role,
+        content: msg.content,
+      });
+    });
+    
+    return contextMessages;
   }
 }
 

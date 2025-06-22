@@ -1,15 +1,12 @@
-import User from './User';
-import Task from './Task';
-import Team from './Team';
-import RecurringTask from './RecurringTask';
-import Notification from './Notification';
-import ChatHistory from './ChatHistory';
-import ChatFeedback from './ChatFeedback';
-import AnalyticsData from './AnalyticsData';
-import CalendarEvent from './CalendarEvent';
-
-// Re-export models
-export { User, Team, Task, RecurringTask, Notification, ChatHistory, ChatFeedback, AnalyticsData, CalendarEvent };
+// Export all model interfaces and classes
+export * from './User';
+export * from './Task';
+export * from './Team';
+export * from './CalendarEvent';
+export * from './RecurringTask';
+export * from './Notification';
+export * from './ChatHistory';
+export * from './ChatFeedback';
 
 // Re-export types
 export type { IUser } from './User';
