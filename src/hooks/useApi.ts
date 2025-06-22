@@ -126,7 +126,7 @@ export const useUsers = (params?: {
         .select('*');
 
       if (params?.search) {
-        query = query.or(`name.ilike.%${params.search}%,email.ilike.%${params.search}%`);
+        query = query.or(`name.ilike.%${params.search}%`);
       }
 
       if (params?.role) {
@@ -141,7 +141,7 @@ export const useUsers = (params?: {
       const users = data?.map(profile => ({
         id: profile.id,
         name: profile.name,
-        email: profile.id + '@example.com',
+        email: profile.id + '@smarttasker.ai',
         role: profile.role as 'admin' | 'team_leader' | 'team_member',
         avatar: profile.avatar,
         isActive: profile.is_active,
@@ -167,7 +167,7 @@ export const useUsers = (params?: {
 export const useCurrentUser = () => {
   return useQuery({
     queryKey: ['currentUser'],
-    queryFn: async (): Promise<ApiResponse<{ user: User }>> => {
+    queryFn: async (): Promise<User> => {
       const { data: { user }, error } = await supabase.auth.getUser();
       
       if (error || !user) {
@@ -183,19 +183,15 @@ export const useCurrentUser = () => {
       if (profileError) throw profileError;
 
       return {
-        data: {
-          user: {
-            id: profile.id,
-            name: profile.name,
-            email: user.email || '',
-            role: profile.role as 'admin' | 'team_leader' | 'team_member',
-            avatar: profile.avatar,
-            isActive: profile.is_active,
-            teamId: profile.team_id,
-            createdAt: profile.created_at,
-            updatedAt: profile.updated_at,
-          }
-        }
+        id: profile.id,
+        name: profile.name,
+        email: user.email || '',
+        role: profile.role as 'admin' | 'team_leader' | 'team_member',
+        avatar: profile.avatar,
+        isActive: profile.is_active,
+        teamId: profile.team_id,
+        createdAt: profile.created_at,
+        updatedAt: profile.updated_at,
       };
     },
   });
@@ -214,7 +210,7 @@ export const useTeams = (params?: {
         .from('teams')
         .select(`
           *,
-          leader:profiles!leader_id(*)
+          leader:profiles!teams_leader_id_fkey(*)
         `);
 
       if (params?.search) {
@@ -235,7 +231,7 @@ export const useTeams = (params?: {
         leader: team.leader ? {
           id: team.leader.id,
           name: team.leader.name,
-          email: team.leader.id + '@example.com',
+          email: team.leader.id + '@smarttasker.ai',
           role: team.leader.role as 'admin' | 'team_leader' | 'team_member',
           avatar: team.leader.avatar,
           isActive: team.leader.is_active,
@@ -300,8 +296,8 @@ export const useTasks = (params?: {
         .from('tasks')
         .select(`
           *,
-          assignee:profiles!assigned_to(*),
-          createdByUser:profiles!created_by(*)
+          assignee:profiles!tasks_assigned_to_fkey(*),
+          createdByUser:profiles!tasks_created_by_fkey(*)
         `);
 
       if (params?.search) {
@@ -340,7 +336,7 @@ export const useTasks = (params?: {
         assignee: task.assignee ? {
           id: task.assignee.id,
           name: task.assignee.name,
-          email: task.assignee.id + '@example.com',
+          email: task.assignee.id + '@smarttasker.ai',
           role: task.assignee.role as 'admin' | 'team_leader' | 'team_member',
           avatar: task.assignee.avatar,
           isActive: task.assignee.is_active,
@@ -351,7 +347,7 @@ export const useTasks = (params?: {
         createdByUser: task.createdByUser ? {
           id: task.createdByUser.id,
           name: task.createdByUser.name,
-          email: task.createdByUser.id + '@example.com',
+          email: task.createdByUser.id + '@smarttasker.ai',
           role: task.createdByUser.role as 'admin' | 'team_leader' | 'team_member',
           avatar: task.createdByUser.avatar,
           isActive: task.createdByUser.is_active,
@@ -478,7 +474,7 @@ export const useCalendarEvents = (params?: {
 }) => {
   return useQuery({
     queryKey: ['calendarEvents', params],
-    queryFn: async (): Promise<ApiResponse<{ events: CalendarEvent[] }>> => {
+    queryFn: async (): Promise<{ events: CalendarEvent[] }> => {
       let query = supabase
         .from('calendar_events')
         .select('*')
@@ -505,9 +501,7 @@ export const useCalendarEvents = (params?: {
         status: event.status as 'cancelled' | 'confirmed' | 'tentative',
       })) || [];
 
-      return {
-        data: { events }
-      };
+      return { events };
     },
   });
 };
@@ -667,7 +661,7 @@ export const useUpdateUser = () => {
       return {
         id: data.id,
         name: data.name,
-        email: data.id + '@example.com',
+        email: data.id + '@smarttasker.ai',
         role: data.role as 'admin' | 'team_leader' | 'team_member',
         avatar: data.avatar,
         isActive: data.is_active,
