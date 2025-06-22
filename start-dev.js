@@ -147,27 +147,6 @@ async function startDev() {
       log('Docker containers are already running', 'success');
     }
     
-    // Verify MongoDB is reachable
-    log('Verifying MongoDB container is healthy...');
-    let mongoReady = false;
-    
-    try {
-      // Try to connect to mongo-express UI which indicates MongoDB is working
-      mongoReady = await checkServiceReady(8081);
-      
-      if (mongoReady) {
-        log('MongoDB is ready!', 'success');
-      } else {
-        log('MongoDB container might not be fully ready. Continuing anyway...', 'warning');
-        // Try to restart MongoDB container if it's not ready
-        log('Attempting to restart MongoDB container...', 'warning');
-        execSync('docker restart smarttasker-mongodb', { stdio: 'ignore' });
-        await setTimeout(5000);
-      }
-    } catch (error) {
-      log('Could not verify MongoDB health. Continuing anyway...', 'warning');
-    }
-    
     // Verify Redis is reachable
     log('Verifying Redis container is healthy...');
     let redisReady = false;
@@ -216,7 +195,6 @@ async function startDev() {
   // Display useful information
   log('---------------------------------------------', 'success');
   log('🚀 Development environment is running!', 'success');
-  log('📊 MongoDB Admin UI: http://localhost:8081', 'success');
   log('🔄 Redis Commander UI: http://localhost:8082', 'success');
   log('🖥️ Frontend: http://localhost:8080', 'success');
   log('⚙️ Backend API: http://localhost:5000', 'success');

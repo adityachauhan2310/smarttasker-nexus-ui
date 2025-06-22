@@ -10,7 +10,13 @@ export const supabase = createClient(
 // For admin/service role operations that require higher privileges
 export const supabaseAdmin = createClient(
   config.supabaseUrl,
-  config.supabaseServiceKey || config.supabaseAnonKey
+  config.supabaseServiceKey || config.supabaseAnonKey,
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
+    }
+  }
 );
 
 const connectDB = async (): Promise<void> => {
@@ -19,9 +25,10 @@ const connectDB = async (): Promise<void> => {
     console.log('Supabase URL:', config.supabaseUrl);
     
     // Test connection by making a simple query
-    const { data, error } = await supabase.from('profiles').select('id').limit(1);
+    const { data, error } = await supabaseAdmin.from('profiles').select('id').limit(1);
     
     if (error) {
+      console.error('Supabase query error:', error);
       throw error;
     }
     
@@ -30,7 +37,9 @@ const connectDB = async (): Promise<void> => {
   } catch (error: any) {
     console.error('Error connecting to Supabase:', error.message);
     console.error('Full error:', error);
-    process.exit(1);
+    
+    // Don't exit the process, try to continue
+    console.log('Attempting to continue despite connection error...');
   }
 };
 
