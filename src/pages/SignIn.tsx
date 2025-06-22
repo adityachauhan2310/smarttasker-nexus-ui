@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -207,31 +208,6 @@ const SignIn = () => {
                   </Button>
                 </form>
               </Form>
-
-              {/* Demo Credentials */}
-              <div className="mt-8 pt-6 border-t border-gray-200">
-                <div className="text-center">
-                  <p className="text-sm text-gray-500 mb-4 font-medium">
-                    Demo Credentials Available
-                  </p>
-                  <div className="text-sm space-y-3 bg-gradient-to-r from-gray-50 to-blue-50 rounded-lg p-4 border border-gray-200">
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between p-2 bg-white rounded border border-orange-200">
-                        <span className="text-orange-600 font-semibold text-xs">ADMIN</span>
-                        <span className="text-gray-700 text-xs font-mono">admin@smarttasker.ai / admin123</span>
-                      </div>
-                      <div className="flex items-center justify-between p-2 bg-white rounded border border-blue-200">
-                        <span className="text-blue-600 font-semibold text-xs">LEADER</span>
-                        <span className="text-gray-700 text-xs font-mono">leader@smarttasker.ai / leader123</span>
-                      </div>
-                      <div className="flex items-center justify-between p-2 bg-white rounded border border-green-200">
-                        <span className="text-green-600 font-semibold text-xs">MEMBER</span>
-                        <span className="text-gray-700 text-xs font-mono">member@smarttasker.ai / member123</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
             </CardContent>
           </Card>
 

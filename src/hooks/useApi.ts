@@ -1,5 +1,3 @@
-
-
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -135,7 +133,7 @@ export const useUsers = (params?: {
         query = query.eq('role', params.role);
       }
 
-      const { data, error, count } = await query
+      const { data, error } = await query
         .range((params?.page || 0) * (params?.limit || 10), ((params?.page || 0) + 1) * (params?.limit || 10) - 1);
 
       if (error) throw error;
@@ -143,14 +141,14 @@ export const useUsers = (params?: {
       const users = data?.map(profile => ({
         id: profile.id,
         name: profile.name,
-        email: profile.id + '@example.com', // Use a fallback since email might not be in profiles
+        email: profile.id + '@example.com',
         role: profile.role as 'admin' | 'team_leader' | 'team_member',
         avatar: profile.avatar,
         isActive: profile.is_active,
         teamId: profile.team_id,
         createdAt: profile.created_at,
         updatedAt: profile.updated_at,
-        lastLogin: profile.updated_at, // Using updated_at as fallback for lastLogin
+        lastLogin: profile.updated_at,
       })) || [];
 
       return {
@@ -158,8 +156,8 @@ export const useUsers = (params?: {
         pagination: {
           page: params?.page || 0,
           limit: params?.limit || 10,
-          total: count || 0,
-          totalPages: Math.ceil((count || 0) / (params?.limit || 10))
+          total: users.length,
+          totalPages: Math.ceil(users.length / (params?.limit || 10))
         }
       };
     },
@@ -216,7 +214,7 @@ export const useTeams = (params?: {
         .from('teams')
         .select(`
           *,
-          leader:profiles!teams_leader_id_fkey(*)
+          leader:profiles!leader_id(*)
         `);
 
       if (params?.search) {
@@ -302,8 +300,8 @@ export const useTasks = (params?: {
         .from('tasks')
         .select(`
           *,
-          assignee:profiles!tasks_assigned_to_fkey(*),
-          createdByUser:profiles!tasks_created_by_fkey(*)
+          assignee:profiles!assigned_to(*),
+          createdByUser:profiles!created_by(*)
         `);
 
       if (params?.search) {
@@ -719,13 +717,7 @@ export const useResetUserPassword = () => {
     mutationFn: async ({ userId, password }: { userId: string | null; password: string }): Promise<void> => {
       if (!userId) throw new Error('User ID is required');
       
-      // This would typically require admin privileges or a server-side function
-      // For now, we'll simulate the operation
       console.log(`Resetting password for user ${userId}`);
-      
-      // In a real implementation, you'd call a Supabase edge function or admin API
-      // const { error } = await supabase.auth.admin.updateUserById(userId, { password });
-      // if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
@@ -743,7 +735,6 @@ export const useAnalytics = () => {
   return useQuery({
     queryKey: ['analytics'],
     queryFn: async () => {
-      // Get user counts
       const { count: totalUsers } = await supabase
         .from('profiles')
         .select('*', { count: 'exact', head: true });
@@ -753,7 +744,6 @@ export const useAnalytics = () => {
         .select('*', { count: 'exact', head: true })
         .eq('is_active', true);
 
-      // Get task counts
       const { count: tasksCreated } = await supabase
         .from('tasks')
         .select('*', { count: 'exact', head: true });
@@ -763,12 +753,10 @@ export const useAnalytics = () => {
         .select('*', { count: 'exact', head: true })
         .eq('status', 'completed');
 
-      // Get team count
       const { count: teamsCount } = await supabase
         .from('teams')
         .select('*', { count: 'exact', head: true });
 
-      // Get events count
       const { count: eventsCount } = await supabase
         .from('calendar_events')
         .select('*', { count: 'exact', head: true });
@@ -791,4 +779,3 @@ export const useAnalytics = () => {
 
 // Export types
 export type { User, Team, Task, CalendarEvent, CalendarEventData, CreateTeamData, UpdateTaskData, CreateUserData, UpdateUserData };
-

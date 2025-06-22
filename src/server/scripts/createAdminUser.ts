@@ -1,46 +1,61 @@
 
-import mongoose from 'mongoose';
+import { supabaseAdmin } from '../config/database';
 import bcrypt from 'bcrypt';
-import config from '../config/config';
-import User from '../models/User';
 
 const createAdminUser = async () => {
   try {
-    console.log('Connecting to MongoDB...');
-    await mongoose.connect(config.mongoURI);
-    console.log('Connected to MongoDB');
+    console.log('Creating admin user in Supabase...');
 
     // Check if admin user already exists
-    const existingAdmin = await User.findOne({ email: 'admin@smarttasker.ai' });
+    const { data: existingUsers, error: listError } = await supabaseAdmin.auth.admin.listUsers();
     
-    if (existingAdmin) {
-      console.log('Admin user already exists');
+    if (listError) {
+      console.error('Error listing users:', listError);
       return;
     }
 
-    // Hash password
-    const hashedPassword = await bcrypt.hash('admin123', 12);
+    const existingAdmin = existingUsers.users.find(user => user.email === 'admin@smarttasker.ai');
+    
+    if (existingAdmin) {
+      console.log('Admin user already exists');
+      
+      // Update password
+      const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
+        existingAdmin.id,
+        { password: '2025@Aditya' }
+      );
+      
+      if (updateError) {
+        console.error('Error updating admin password:', updateError);
+      } else {
+        console.log('Admin password updated successfully');
+      }
+      return;
+    }
 
     // Create admin user
-    const adminUser = await User.create({
-      name: 'System Administrator',
+    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email: 'admin@smarttasker.ai',
-      password: hashedPassword,
-      role: 'admin',
-      isActive: true,
-      verified: true,
+      password: '2025@Aditya',
+      email_confirm: true,
+      user_metadata: {
+        name: 'System Administrator',
+        role: 'admin'
+      }
     });
+
+    if (authError) {
+      console.error('Error creating admin user:', authError);
+      return;
+    }
 
     console.log('Admin user created successfully:');
     console.log('Email: admin@smarttasker.ai');
-    console.log('Password: admin123');
-    console.log('Please change this password after first login');
+    console.log('Password: 2025@Aditya');
+    console.log('User ID:', authData.user.id);
 
   } catch (error) {
     console.error('Error creating admin user:', error);
-  } finally {
-    await mongoose.disconnect();
-    console.log('Disconnected from MongoDB');
   }
 };
 
